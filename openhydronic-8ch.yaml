@@ -1,0 +1,852 @@
+# =============================================================================
+#  OpenHydronic - ESPHome firmware for hydronic heating control
+#  Copyright (C) 2026 David Lopes (https://github.com/davdlic)
+#  Licensed under the GNU General Public License v3.0 - see LICENSE
+#
+#  Target   : ESP32-WROOM-32 relay board, 8 channels
+#  Requires : ESPHome >= 2025.5.0
+#
+#  The board knows nothing about temperatures or schedules. It takes zone
+#  requests and decides when it is safe to apply them. Thermostats, hysteresis
+#  and scheduling live in OpenHydronic-HA.
+# =============================================================================
+
+substitutions:
+  # ---- Identity ------------------------------------------------------------
+  device_name: "openhydronic"
+  friendly_name: "OpenHydronic"
+  device_comment: "8 zone hydronic controller"
+
+  # ---- Channels populated on the board -------------------------------------
+  # 4 or 8. For 12/16 use a second board, see README "Scaling the channels".
+  zone_count: "8"
+
+  # ---- GPIO map (reference ESP32 Relay X8 board) ---------------------------
+  relay_1_pin: "GPIO32"
+  relay_2_pin: "GPIO33"
+  relay_3_pin: "GPIO25"
+  relay_4_pin: "GPIO26"
+  relay_5_pin: "GPIO27"
+  relay_6_pin: "GPIO14"
+  relay_7_pin: "GPIO12"
+  relay_8_pin: "GPIO13"
+  status_led_pin: "GPIO02"
+
+  # "true" for active-low boards (relay closes on LOW). Reference board is
+  # active-high. Mind the GPIO12 warning in the README before changing this.
+  relay_inverted: "false"
+
+  # ---- Channel roles -------------------------------------------------------
+  # master_channel: channel reserved for the local master relay, used only when
+  #                 "Master Local Mode" is on. "0" reserves nothing.
+  # bypass_channel: channel driving the differential bypass valve. "0" = none.
+  master_channel: "8"
+  bypass_channel: "0"
+
+  # Hide zone entities at compile time, e.g. when channel 8 is always the
+  # master or fewer actuators are wired.
+  zone_1_hidden: "false"
+  zone_2_hidden: "false"
+  zone_3_hidden: "false"
+  zone_4_hidden: "false"
+  zone_5_hidden: "false"
+  zone_6_hidden: "false"
+  zone_7_hidden: "false"
+  zone_8_hidden: "false"
+
+  # ---- Timer defaults (adjustable at runtime, no reflash) ------------------
+  default_master_start_delay: "3"    # min - actuator thermal delay
+  default_master_purge_delay: "2"    # min - residual heat purge
+  default_master_min_off: "5"        # min - boiler anti-short-cycle
+  default_min_run_time: "10"         # min - minimum ON per relay
+  default_min_off_time: "10"         # min - minimum OFF per relay
+  default_air_purge_time: "30"       # min - manual air purge
+
+  # ---- Anti-seize routine --------------------------------------------------
+  antiseize_hour: "10"
+  antiseize_minute: "0"
+  antiseize_days: "SUN"
+  antiseize_minutes: "5"
+
+# =============================================================================
+#  CORE
+# =============================================================================
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  comment: ${device_comment}
+  # Unique hostname/mDNS: openhydronic-a1b2c3.local
+  name_add_mac_suffix: true
+  project:
+    name: "OpenHydronic.Firmware"
+    version: "1.0.0"
+  on_boot:
+    # Priority 600: safe state before any hardware comes up.
+    - priority: 600
+      then:
+        - lambda: |-
+            uint32_t t = millis();
+            for (int i = 0; i < 9; i++) {
+              id(zone_req)[i] = false;
+              // Backdate 1 h so no relay boots locked by the min-off timer.
+              id(zone_last_on)[i]  = t - 3600000UL;
+              id(zone_last_off)[i] = t - 3600000UL;
+            }
+            id(master_state)    = false;
+            id(master_last_off) = t - 3600000UL;
+            id(demand_since)    = 0;
+            id(purge_since)     = 0;
+            id(override_mode)   = 0;
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+logger:
+  level: INFO
+  baud_rate: 115200
+
+# -----------------------------------------------------------------------------
+#  Encrypted native API.
+#  reboot_timeout: 0s -> losing Home Assistant never reboots the board.
+# -----------------------------------------------------------------------------
+api:
+  encryption:
+    key: !secret api_encryption_key
+  reboot_timeout: 0s
+  # Exposed to Home Assistant as esphome.<node>_<action>. The integration calls
+  # the purge, anti-seize and stop actions; zones are driven by their switches.
+  actions:
+    # Request a zone, for automations or other API clients.
+    - action: zone_set
+      variables:
+        zone: int
+        state: bool
+      then:
+        - lambda: |-
+            if (zone >= 1 && zone <= 8) id(zone_req)[zone] = state;
+
+    - action: all_zones_off
+      then:
+        - lambda: |-
+            for (int i = 1; i <= 8; i++) id(zone_req)[i] = false;
+
+    - action: start_air_purge
+      then:
+        - script.execute: air_purge_script
+
+    - action: stop_air_purge
+      then:
+        - script.stop: air_purge_script
+        - lambda: |-
+            if (id(override_mode) == 2) id(override_mode) = 0;
+
+    - action: start_anti_seize
+      then:
+        - script.execute: anti_seize_script
+
+    - action: emergency_stop
+      then:
+        - script.execute: emergency_stop_script
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+# -----------------------------------------------------------------------------
+#  Network: station + recovery access point.
+#  reboot_timeout: 0s -> without Wi-Fi the board stays alive in AP mode.
+# -----------------------------------------------------------------------------
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  reboot_timeout: 0s
+  ap:
+    ssid: "OpenHydronic-AP"
+    password: !secret ap_password
+    # Recovery AP comes up after 60 s without a network.
+    ap_timeout: 60s
+
+captive_portal:
+improv_serial:
+
+# -----------------------------------------------------------------------------
+#  Standalone web server, the fallback when Home Assistant is down.
+#  local: true -> assets in flash, no internet needed.
+# -----------------------------------------------------------------------------
+web_server:
+  port: 80
+  version: 2
+  local: true
+  auth:
+    username: !secret web_username
+    password: !secret web_password
+
+# Status LED: off = healthy, blinking = Wi-Fi/API error.
+status_led:
+  pin:
+    number: ${status_led_pin}
+
+# =============================================================================
+#  INTERNAL STATE
+# =============================================================================
+globals:
+  # Index 1..8 = physical channel; index 0 unused to avoid off-by-one lambdas.
+  # Arrays take no initial_value: they are zeroed by default and on_boot sets
+  # the real values before any hardware comes up.
+  - id: zone_req
+    type: bool[9]
+  - id: zone_last_on
+    type: uint32_t[9]
+  - id: zone_last_off
+    type: uint32_t[9]
+
+  - id: master_state
+    type: bool
+    initial_value: 'false'
+  - id: master_last_off
+    type: uint32_t
+    initial_value: '0'
+  - id: demand_since          # millis when heat demand started, 0 = none
+    type: uint32_t
+    initial_value: '0'
+  - id: purge_since           # millis when the heat purge started, 0 = idle
+    type: uint32_t
+    initial_value: '0'
+
+  # 0 = normal | 1 = anti-seize | 2 = air purge
+  - id: override_mode
+    type: uint8_t
+    initial_value: '0'
+
+# =============================================================================
+#  RUNTIME TIMERS
+#  Exposed as number entities so they can be tuned without a reflash.
+# =============================================================================
+number:
+  - platform: template
+    name: "Master Start Delay"
+    id: master_start_delay
+    unit_of_measurement: "min"
+    icon: mdi:timer-sand
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_value: ${default_master_start_delay}
+    min_value: 0
+    max_value: 15
+    step: 0.5
+    mode: box
+
+  - platform: template
+    name: "Heat Purge Delay"
+    id: master_purge_delay
+    unit_of_measurement: "min"
+    icon: mdi:radiator
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_value: ${default_master_purge_delay}
+    min_value: 0
+    max_value: 15
+    step: 0.5
+    mode: box
+
+  - platform: template
+    name: "Master Min Off Time"
+    id: master_min_off
+    unit_of_measurement: "min"
+    icon: mdi:fire-off
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_value: ${default_master_min_off}
+    min_value: 0
+    max_value: 30
+    step: 1
+    mode: box
+
+  - platform: template
+    name: "Zone Min Run Time"
+    id: min_run_time
+    unit_of_measurement: "min"
+    icon: mdi:play-speed
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_value: ${default_min_run_time}
+    min_value: 0
+    max_value: 60
+    step: 1
+    mode: box
+
+  - platform: template
+    name: "Zone Min Off Time"
+    id: min_off_time
+    unit_of_measurement: "min"
+    icon: mdi:pause-octagon
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_value: ${default_min_off_time}
+    min_value: 0
+    max_value: 60
+    step: 1
+    mode: box
+
+  - platform: template
+    name: "Air Purge Duration"
+    id: air_purge_time
+    unit_of_measurement: "min"
+    icon: mdi:air-filter
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_value: ${default_air_purge_time}
+    min_value: 1
+    max_value: 120
+    step: 1
+    mode: box
+
+# =============================================================================
+#  PHYSICAL OUTPUTS
+#  restore_mode: ALWAYS_OFF -> power-on safe state. A power cut never leaves a
+#  valve open with the boiler starting by itself.
+# =============================================================================
+switch:
+  - platform: gpio
+    id: relay_1
+    pin:
+      number: ${relay_1_pin}
+      inverted: ${relay_inverted}
+    restore_mode: ALWAYS_OFF
+    internal: true
+  - platform: gpio
+    id: relay_2
+    pin:
+      number: ${relay_2_pin}
+      inverted: ${relay_inverted}
+    restore_mode: ALWAYS_OFF
+    internal: true
+  - platform: gpio
+    id: relay_3
+    pin:
+      number: ${relay_3_pin}
+      inverted: ${relay_inverted}
+    restore_mode: ALWAYS_OFF
+    internal: true
+  - platform: gpio
+    id: relay_4
+    pin:
+      number: ${relay_4_pin}
+      inverted: ${relay_inverted}
+    restore_mode: ALWAYS_OFF
+    internal: true
+  - platform: gpio
+    id: relay_5
+    pin:
+      number: ${relay_5_pin}
+      inverted: ${relay_inverted}
+    restore_mode: ALWAYS_OFF
+    internal: true
+  - platform: gpio
+    id: relay_6
+    pin:
+      number: ${relay_6_pin}
+      inverted: ${relay_inverted}
+    restore_mode: ALWAYS_OFF
+    internal: true
+  - platform: gpio
+    id: relay_7
+    pin:
+      number: ${relay_7_pin}
+      inverted: ${relay_inverted}
+    restore_mode: ALWAYS_OFF
+    internal: true
+  - platform: gpio
+    id: relay_8
+    pin:
+      number: ${relay_8_pin}
+      inverted: ${relay_inverted}
+    restore_mode: ALWAYS_OFF
+    internal: true
+
+  # ---------------------------------------------------------------------------
+  #  ZONES (public interface)
+  #  Writing to a switch records a request; the 1 Hz engine decides when to
+  #  apply it. The state read back is always the real relay state.
+  # ---------------------------------------------------------------------------
+  - platform: template
+    name: "Zone 1"
+    id: zone_1
+    icon: mdi:pipe-valve
+    internal: ${zone_1_hidden}
+    lambda: return id(relay_1).state;
+    turn_on_action:
+      - lambda: id(zone_req)[1] = true;
+    turn_off_action:
+      - lambda: id(zone_req)[1] = false;
+
+  - platform: template
+    name: "Zone 2"
+    id: zone_2
+    icon: mdi:pipe-valve
+    internal: ${zone_2_hidden}
+    lambda: return id(relay_2).state;
+    turn_on_action:
+      - lambda: id(zone_req)[2] = true;
+    turn_off_action:
+      - lambda: id(zone_req)[2] = false;
+
+  - platform: template
+    name: "Zone 3"
+    id: zone_3
+    icon: mdi:pipe-valve
+    internal: ${zone_3_hidden}
+    lambda: return id(relay_3).state;
+    turn_on_action:
+      - lambda: id(zone_req)[3] = true;
+    turn_off_action:
+      - lambda: id(zone_req)[3] = false;
+
+  - platform: template
+    name: "Zone 4"
+    id: zone_4
+    icon: mdi:pipe-valve
+    internal: ${zone_4_hidden}
+    lambda: return id(relay_4).state;
+    turn_on_action:
+      - lambda: id(zone_req)[4] = true;
+    turn_off_action:
+      - lambda: id(zone_req)[4] = false;
+
+  - platform: template
+    name: "Zone 5"
+    id: zone_5
+    icon: mdi:pipe-valve
+    internal: ${zone_5_hidden}
+    lambda: return id(relay_5).state;
+    turn_on_action:
+      - lambda: id(zone_req)[5] = true;
+    turn_off_action:
+      - lambda: id(zone_req)[5] = false;
+
+  - platform: template
+    name: "Zone 6"
+    id: zone_6
+    icon: mdi:pipe-valve
+    internal: ${zone_6_hidden}
+    lambda: return id(relay_6).state;
+    turn_on_action:
+      - lambda: id(zone_req)[6] = true;
+    turn_off_action:
+      - lambda: id(zone_req)[6] = false;
+
+  - platform: template
+    name: "Zone 7"
+    id: zone_7
+    icon: mdi:pipe-valve
+    internal: ${zone_7_hidden}
+    lambda: return id(relay_7).state;
+    turn_on_action:
+      - lambda: id(zone_req)[7] = true;
+    turn_off_action:
+      - lambda: id(zone_req)[7] = false;
+
+  - platform: template
+    name: "Zone 8"
+    id: zone_8
+    icon: mdi:pipe-valve
+    internal: ${zone_8_hidden}
+    lambda: return id(relay_8).state;
+    turn_on_action:
+      - lambda: id(zone_req)[8] = true;
+    turn_off_action:
+      - lambda: id(zone_req)[8] = false;
+
+  # ---------------------------------------------------------------------------
+  #  OPERATING MODES
+  # ---------------------------------------------------------------------------
+  # ON  -> channel ${master_channel} stops being a zone and becomes the master.
+  # OFF -> 100% actuators; the master lives in Home Assistant.
+  - platform: template
+    name: "Master Local Mode"
+    id: master_local_mode
+    icon: mdi:water-boiler
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  # Blocks heat production, valves and anti-seize keep working.
+  - platform: template
+    name: "Summer Mode"
+    id: summer_mode
+    icon: mdi:weather-sunny
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    on_turn_on:
+      - lambda: |-
+          for (int i = 1; i <= 8; i++) id(zone_req)[i] = false;
+
+  # Turn off only on the bench. In service it protects the PTC heads.
+  - platform: template
+    name: "Cycle Protection"
+    id: cycle_guard
+    icon: mdi:shield-refresh
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+
+  - platform: template
+    name: "Bypass Protection"
+    id: bypass_enable
+    icon: mdi:pipe-disconnected
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+
+  - platform: template
+    name: "Anti-Seize Runs Pump"
+    id: antiseize_pump
+    icon: mdi:pump
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+
+  - platform: template
+    name: "Air Purge Mode"
+    id: air_purge_mode
+    icon: mdi:air-filter
+    lambda: return id(override_mode) == 2;
+    turn_on_action:
+      - script.execute: air_purge_script
+    turn_off_action:
+      - script.stop: air_purge_script
+      - lambda: |-
+          if (id(override_mode) == 2) id(override_mode) = 0;
+
+# =============================================================================
+#  SAFETY ENGINE
+#  One deterministic 1 Hz pass, so requests from Home Assistant and from the
+#  web server cannot race each other.
+# =============================================================================
+interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          static switch_::Switch *R[9] = {
+            nullptr, id(relay_1), id(relay_2), id(relay_3), id(relay_4),
+                     id(relay_5), id(relay_6), id(relay_7), id(relay_8)
+          };
+
+          const uint32_t now = millis();
+          const int ZONES     = ${zone_count};
+          const int MASTER_CH = ${master_channel};
+          const int BYPASS_CH = ${bypass_channel};
+
+          const bool local_master = id(master_local_mode).state && MASTER_CH >= 1 && MASTER_CH <= 8;
+          const uint8_t ovr = id(override_mode);
+
+          // -- 1. Desired state of each channel -------------------------------
+          bool desired[9] = {false};
+          for (int ch = 1; ch <= 8; ch++) {
+            if (ch > ZONES) continue;                       // not populated
+            if (local_master && ch == MASTER_CH) continue;  // master channel
+            if (ovr == 1 || ovr == 2) desired[ch] = true;   // anti-seize / purge
+            else                      desired[ch] = id(zone_req)[ch];
+          }
+
+          // -- 2. Heat demand; the bypass is not a consumer -------------------
+          bool demand = false;
+          for (int ch = 1; ch <= 8; ch++) {
+            if (desired[ch] && ch != BYPASS_CH) { demand = true; break; }
+          }
+
+          // -- 3. Master state machine ----------------------------------------
+          //  demand -> [start delay] -> ON -> no demand -> [purge] -> OFF
+          const uint32_t start_ms = (uint32_t)(id(master_start_delay).state * 60000.0f);
+          const uint32_t purge_ms = (uint32_t)(id(master_purge_delay).state * 60000.0f);
+          const uint32_t moff_ms  = (uint32_t)(id(master_min_off).state     * 60000.0f);
+
+          bool m = id(master_state);
+          if (demand) {
+            id(purge_since) = 0;
+            if (id(demand_since) == 0) id(demand_since) = now;
+            if (!m && (now - id(demand_since)) >= start_ms
+                   && (now - id(master_last_off)) >= moff_ms) {
+              m = true;
+            }
+          } else {
+            id(demand_since) = 0;
+            if (m) {
+              if (id(purge_since) == 0) id(purge_since) = now;
+              if ((now - id(purge_since)) >= purge_ms) {
+                m = false;
+                id(purge_since) = 0;
+              }
+            }
+          }
+          // Summer mode, and anti-seize without pump, block heat production.
+          if (id(summer_mode).state)                 m = false;
+          if (ovr == 1 && !id(antiseize_pump).state) m = false;
+          if (id(master_state) && !m) id(master_last_off) = now;
+          id(master_state) = m;
+
+          // -- 4. Flow protection: open the bypass when the pump would run
+          //       against a closed circuit (dead head).
+          if (BYPASS_CH >= 1 && BYPASS_CH <= 8 && id(bypass_enable).state) {
+            if (m || id(demand_since) != 0) {
+              bool any_open = false;
+              for (int ch = 1; ch <= 8; ch++) {
+                if (ch == BYPASS_CH) continue;
+                if (local_master && ch == MASTER_CH) continue;
+                if (R[ch]->state) { any_open = true; break; }
+              }
+              if (!any_open) desired[BYPASS_CH] = true;
+            }
+          }
+
+          // -- 5. Apply to the relays, honouring the minimum cycle -------------
+          const uint32_t run_ms = (uint32_t)(id(min_run_time).state * 60000.0f);
+          const uint32_t off_ms = (uint32_t)(id(min_off_time).state * 60000.0f);
+          const bool force = (ovr != 0) || !id(cycle_guard).state;
+
+          for (int ch = 1; ch <= 8; ch++) {
+            if (ch > ZONES) continue;
+            if (local_master && ch == MASTER_CH) continue;
+
+            const bool cur = R[ch]->state;
+            if (desired[ch] == cur) continue;
+
+            if (!force) {
+              const uint32_t need  = desired[ch] ? off_ms : run_ms;
+              const uint32_t since = desired[ch] ? (now - id(zone_last_off)[ch])
+                                                 : (now - id(zone_last_on)[ch]);
+              if (since < need) continue;   // still locked, retry next tick
+            }
+
+            if (desired[ch]) { R[ch]->turn_on();  id(zone_last_on)[ch]  = now; }
+            else             { R[ch]->turn_off(); id(zone_last_off)[ch] = now; }
+          }
+
+          // -- 6. Physical master relay, local master mode only ----------------
+          if (local_master) {
+            if (R[MASTER_CH]->state != m) {
+              if (m) R[MASTER_CH]->turn_on(); else R[MASTER_CH]->turn_off();
+            }
+          }
+
+# =============================================================================
+#  SCRIPTS
+# =============================================================================
+script:
+  # Manual air purge: every valve open plus the pump, for N minutes.
+  # The pump still honours the Master Start Delay, so the heads are open
+  # before there is any flow.
+  - id: air_purge_script
+    mode: restart
+    then:
+      - lambda: id(override_mode) = 2;
+      - delay: !lambda return (uint32_t)(id(air_purge_time).state * 60000.0f);
+      - lambda: |-
+          if (id(override_mode) == 2) id(override_mode) = 0;
+
+  # Anti-seize: exercises every actuator, and the pump if enabled.
+  - id: anti_seize_script
+    mode: restart
+    then:
+      - lambda: id(override_mode) = 1;
+      - delay: ${antiseize_minutes}min
+      - lambda: |-
+          if (id(override_mode) == 1) id(override_mode) = 0;
+
+  # Emergency stop: ignores the minimum timers and closes everything now.
+  - id: emergency_stop_script
+    mode: single
+    then:
+      - script.stop: air_purge_script
+      - script.stop: anti_seize_script
+      - lambda: |-
+          id(override_mode) = 0;
+          for (int i = 1; i <= 8; i++) id(zone_req)[i] = false;
+          id(relay_1).turn_off(); id(relay_2).turn_off();
+          id(relay_3).turn_off(); id(relay_4).turn_off();
+          id(relay_5).turn_off(); id(relay_6).turn_off();
+          id(relay_7).turn_off(); id(relay_8).turn_off();
+          id(master_state)    = false;
+          id(master_last_off) = millis();
+          id(demand_since)    = 0;
+          id(purge_since)     = 0;
+          uint32_t t = millis();
+          for (int i = 1; i <= 8; i++) id(zone_last_off)[i] = t;
+
+# =============================================================================
+#  TIME + ANTI-SEIZE SCHEDULE
+#  Home Assistant provides the clock without internet; SNTP is the fallback.
+# =============================================================================
+time:
+  - platform: homeassistant
+    id: ha_time
+    on_time:
+      - seconds: 0
+        minutes: ${antiseize_minute}
+        hours: ${antiseize_hour}
+        days_of_week: ${antiseize_days}
+        then:
+          - if:
+              condition:
+                lambda: return id(override_mode) == 0;
+              then:
+                - script.execute: anti_seize_script
+
+  - platform: sntp
+    id: sntp_time
+
+# =============================================================================
+#  BUTTONS
+# =============================================================================
+button:
+  - platform: template
+    name: "Air Purge (start)"
+    icon: mdi:air-filter
+    on_press:
+      - script.execute: air_purge_script
+
+  - platform: template
+    name: "Anti-Seize (run now)"
+    icon: mdi:sync-alert
+    entity_category: config
+    on_press:
+      - script.execute: anti_seize_script
+
+  - platform: template
+    name: "Emergency Stop"
+    icon: mdi:stop-circle-outline
+    on_press:
+      - script.execute: emergency_stop_script
+
+  - platform: restart
+    name: "Restart"
+    entity_category: diagnostic
+
+# =============================================================================
+#  STATE TELEMETRY
+#  "Master Demand" reports whether the board is calling for heat. The Home
+#  Assistant integration runs its own master state machine on top of it.
+# =============================================================================
+binary_sensor:
+  - platform: template
+    name: "Master Demand"
+    id: master_demand
+    device_class: heat
+    icon: mdi:water-boiler
+    lambda: return id(master_state);
+
+  - platform: template
+    name: "Heat Demand"
+    id: heat_demand
+    device_class: heat
+    icon: mdi:fire
+    lambda: return id(demand_since) != 0;
+
+  - platform: template
+    name: "Anti-Seize Active"
+    icon: mdi:sync-alert
+    entity_category: diagnostic
+    lambda: return id(override_mode) == 1;
+
+  - platform: template
+    name: "Air Purge Active"
+    icon: mdi:air-filter
+    lambda: return id(override_mode) == 2;
+
+  - platform: status
+    name: "API Status"
+    entity_category: diagnostic
+
+  # Pending: request differs from reality. Drives the blinking valve on the
+  # Lovelace card while the head travels or the min-off timer blocks.
+  - platform: template
+    name: "Zone 1 Pending"
+    entity_category: diagnostic
+    internal: ${zone_1_hidden}
+    lambda: return id(zone_req)[1] != id(relay_1).state;
+  - platform: template
+    name: "Zone 2 Pending"
+    entity_category: diagnostic
+    internal: ${zone_2_hidden}
+    lambda: return id(zone_req)[2] != id(relay_2).state;
+  - platform: template
+    name: "Zone 3 Pending"
+    entity_category: diagnostic
+    internal: ${zone_3_hidden}
+    lambda: return id(zone_req)[3] != id(relay_3).state;
+  - platform: template
+    name: "Zone 4 Pending"
+    entity_category: diagnostic
+    internal: ${zone_4_hidden}
+    lambda: return id(zone_req)[4] != id(relay_4).state;
+  - platform: template
+    name: "Zone 5 Pending"
+    entity_category: diagnostic
+    internal: ${zone_5_hidden}
+    lambda: return id(zone_req)[5] != id(relay_5).state;
+  - platform: template
+    name: "Zone 6 Pending"
+    entity_category: diagnostic
+    internal: ${zone_6_hidden}
+    lambda: return id(zone_req)[6] != id(relay_6).state;
+  - platform: template
+    name: "Zone 7 Pending"
+    entity_category: diagnostic
+    internal: ${zone_7_hidden}
+    lambda: return id(zone_req)[7] != id(relay_7).state;
+  - platform: template
+    name: "Zone 8 Pending"
+    entity_category: diagnostic
+    internal: ${zone_8_hidden}
+    lambda: return id(zone_req)[8] != id(relay_8).state;
+
+sensor:
+  - platform: template
+    name: "Open Zones"
+    id: open_zones
+    icon: mdi:counter
+    accuracy_decimals: 0
+    update_interval: 5s
+    lambda: |-
+      int n = 0;
+      if (id(relay_1).state) n++;
+      if (id(relay_2).state) n++;
+      if (id(relay_3).state) n++;
+      if (id(relay_4).state) n++;
+      if (id(relay_5).state) n++;
+      if (id(relay_6).state) n++;
+      if (id(relay_7).state) n++;
+      if (id(relay_8).state) n++;
+      // In local master mode the master relay is not a zone.
+      if (id(master_local_mode).state && ${master_channel} >= 1 && id(master_state)) n--;
+      return n < 0 ? 0 : n;
+
+  - platform: uptime
+    name: "Uptime"
+    entity_category: diagnostic
+
+  - platform: wifi_signal
+    name: "Wi-Fi Signal"
+    update_interval: 60s
+    entity_category: diagnostic
+
+text_sensor:
+  - platform: version
+    name: "ESPHome Version"
+    entity_category: diagnostic
+
+  - platform: wifi_info
+    ip_address:
+      name: "IP Address"
+      entity_category: diagnostic
+    ssid:
+      name: "SSID"
+      entity_category: diagnostic
