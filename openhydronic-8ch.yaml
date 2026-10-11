@@ -829,6 +829,152 @@ sensor:
       if (id(master_local_mode).state && ${master_channel} >= 1 && id(master_state)) n--;
       return n < 0 ? 0 : n;
 
+  # Minutes left before the minimum cycle lets the pending request through.
+  # Zero means the zone is free to switch right now.
+  - platform: template
+    name: "Zone 1 Lock"
+    icon: mdi:lock-clock
+    unit_of_measurement: "min"
+    accuracy_decimals: 0
+    entity_category: diagnostic
+    internal: ${zone_1_hidden}
+    update_interval: 10s
+    lambda: |-
+      if (!id(cycle_guard).state) return 0.0f;
+      const bool on = id(relay_1).state;
+      const uint32_t need = (uint32_t)((on ? id(min_run_time).state
+                                           : id(min_off_time).state) * 60000.0f);
+      const uint32_t since = millis() - (on ? id(zone_last_on)[1]
+                                            : id(zone_last_off)[1]);
+      if (since >= need) return 0.0f;
+      return ceilf((need - since) / 60000.0f);
+
+  - platform: template
+    name: "Zone 2 Lock"
+    icon: mdi:lock-clock
+    unit_of_measurement: "min"
+    accuracy_decimals: 0
+    entity_category: diagnostic
+    internal: ${zone_2_hidden}
+    update_interval: 10s
+    lambda: |-
+      if (!id(cycle_guard).state) return 0.0f;
+      const bool on = id(relay_2).state;
+      const uint32_t need = (uint32_t)((on ? id(min_run_time).state
+                                           : id(min_off_time).state) * 60000.0f);
+      const uint32_t since = millis() - (on ? id(zone_last_on)[2]
+                                            : id(zone_last_off)[2]);
+      if (since >= need) return 0.0f;
+      return ceilf((need - since) / 60000.0f);
+
+  - platform: template
+    name: "Zone 3 Lock"
+    icon: mdi:lock-clock
+    unit_of_measurement: "min"
+    accuracy_decimals: 0
+    entity_category: diagnostic
+    internal: ${zone_3_hidden}
+    update_interval: 10s
+    lambda: |-
+      if (!id(cycle_guard).state) return 0.0f;
+      const bool on = id(relay_3).state;
+      const uint32_t need = (uint32_t)((on ? id(min_run_time).state
+                                           : id(min_off_time).state) * 60000.0f);
+      const uint32_t since = millis() - (on ? id(zone_last_on)[3]
+                                            : id(zone_last_off)[3]);
+      if (since >= need) return 0.0f;
+      return ceilf((need - since) / 60000.0f);
+
+  - platform: template
+    name: "Zone 4 Lock"
+    icon: mdi:lock-clock
+    unit_of_measurement: "min"
+    accuracy_decimals: 0
+    entity_category: diagnostic
+    internal: ${zone_4_hidden}
+    update_interval: 10s
+    lambda: |-
+      if (!id(cycle_guard).state) return 0.0f;
+      const bool on = id(relay_4).state;
+      const uint32_t need = (uint32_t)((on ? id(min_run_time).state
+                                           : id(min_off_time).state) * 60000.0f);
+      const uint32_t since = millis() - (on ? id(zone_last_on)[4]
+                                            : id(zone_last_off)[4]);
+      if (since >= need) return 0.0f;
+      return ceilf((need - since) / 60000.0f);
+
+  - platform: template
+    name: "Zone 5 Lock"
+    icon: mdi:lock-clock
+    unit_of_measurement: "min"
+    accuracy_decimals: 0
+    entity_category: diagnostic
+    internal: ${zone_5_hidden}
+    update_interval: 10s
+    lambda: |-
+      if (!id(cycle_guard).state) return 0.0f;
+      const bool on = id(relay_5).state;
+      const uint32_t need = (uint32_t)((on ? id(min_run_time).state
+                                           : id(min_off_time).state) * 60000.0f);
+      const uint32_t since = millis() - (on ? id(zone_last_on)[5]
+                                            : id(zone_last_off)[5]);
+      if (since >= need) return 0.0f;
+      return ceilf((need - since) / 60000.0f);
+
+  - platform: template
+    name: "Zone 6 Lock"
+    icon: mdi:lock-clock
+    unit_of_measurement: "min"
+    accuracy_decimals: 0
+    entity_category: diagnostic
+    internal: ${zone_6_hidden}
+    update_interval: 10s
+    lambda: |-
+      if (!id(cycle_guard).state) return 0.0f;
+      const bool on = id(relay_6).state;
+      const uint32_t need = (uint32_t)((on ? id(min_run_time).state
+                                           : id(min_off_time).state) * 60000.0f);
+      const uint32_t since = millis() - (on ? id(zone_last_on)[6]
+                                            : id(zone_last_off)[6]);
+      if (since >= need) return 0.0f;
+      return ceilf((need - since) / 60000.0f);
+
+  - platform: template
+    name: "Zone 7 Lock"
+    icon: mdi:lock-clock
+    unit_of_measurement: "min"
+    accuracy_decimals: 0
+    entity_category: diagnostic
+    internal: ${zone_7_hidden}
+    update_interval: 10s
+    lambda: |-
+      if (!id(cycle_guard).state) return 0.0f;
+      const bool on = id(relay_7).state;
+      const uint32_t need = (uint32_t)((on ? id(min_run_time).state
+                                           : id(min_off_time).state) * 60000.0f);
+      const uint32_t since = millis() - (on ? id(zone_last_on)[7]
+                                            : id(zone_last_off)[7]);
+      if (since >= need) return 0.0f;
+      return ceilf((need - since) / 60000.0f);
+
+  - platform: template
+    name: "Zone 8 Lock"
+    icon: mdi:lock-clock
+    unit_of_measurement: "min"
+    accuracy_decimals: 0
+    entity_category: diagnostic
+    internal: ${zone_8_hidden}
+    update_interval: 10s
+    lambda: |-
+      if (!id(cycle_guard).state) return 0.0f;
+      const bool on = id(relay_8).state;
+      const uint32_t need = (uint32_t)((on ? id(min_run_time).state
+                                           : id(min_off_time).state) * 60000.0f);
+      const uint32_t since = millis() - (on ? id(zone_last_on)[8]
+                                            : id(zone_last_off)[8]);
+      if (since >= need) return 0.0f;
+      return ceilf((need - since) / 60000.0f);
+
   - platform: uptime
     name: "Uptime"
     entity_category: diagnostic

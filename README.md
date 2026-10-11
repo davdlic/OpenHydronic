@@ -412,16 +412,28 @@ closed and the boiler off. It never inherits a previous state.
 Thermal actuators use a **PTC** element that melts a wax plug over 2 to 4 minutes to open the
 valve. Switching them in short cycles degrades the PTC and never actually opens the valve.
 
-The engine enforces, per relay:
+The guard is **proportional, not a fixed lockout**. It compares the time since that relay last
+changed against the minimum, and only blocks when the minimum has not been met yet:
 
-- **10 min ON** before accepting a close request
-- **10 min OFF** before accepting an open request
+| Situation | Result |
+|---|---|
+| On for 2 hours, asked to close | Closes immediately, the minimum was met long ago |
+| On for 30 seconds, asked to close | Waits the remaining 9.5 min |
+| Off for 1 hour, asked to open | Opens immediately |
+| Off for 1 minute, asked to open | Waits 9 min |
 
-The request is not dropped: it stays **pending** and runs as soon as the lock expires. That is what
-the `Zone N Pending` binary sensor reports, and what the Lovelace card shows as a blinking valve.
+In service you rarely notice it: a zone heating a room runs for far longer than the minimum. On the
+bench, where you flip a switch and change your mind seconds later, you meet it every time.
 
-Exceptions that ignore the minimum cycle: `Emergency Stop`, anti-seize, air purge, and switching
-`Cycle Protection` off (bench use only).
+The request is never dropped: it stays **pending** and runs as soon as the lock expires. Two
+entities report this, and the Lovelace card shows the same thing as a blinking valve:
+
+- `Zone N Pending` — the request differs from the relay's real state
+- `Zone N Lock` — minutes left before it can be applied, `0` when the zone is free
+
+Exceptions that ignore the minimum cycle: `Emergency Stop`, anti-seize and air purge. For bench
+testing, switch `Cycle Protection` off so the relays answer instantly, and **switch it back on
+before putting the system in service**.
 
 ### Master thermal delay (3 min)
 
@@ -512,6 +524,7 @@ Prefixed with `${friendly_name}` in Home Assistant.
 | `Master Demand` | `binary_sensor` | The board says the boiler or pump should be running. |
 | `Heat Demand` | `binary_sensor` | At least one zone is asking for heat, before the delay. |
 | `Zone 1..8 Pending` | `binary_sensor` | Request differs from reality: opening or closing. |
+| `Zone 1..8 Lock` | `sensor` (min) | Minutes left on the minimum cycle, `0` when free to switch. |
 | `Anti-Seize Active` | `binary_sensor` | Exercise cycle in progress. |
 | `Air Purge Active` | `binary_sensor` | Air purge in progress. |
 | `Open Zones` | `sensor` | Number of zones physically open. |
@@ -568,6 +581,12 @@ Manual heating procedure:
 3. Log in with `web_username` / `web_password`.
 4. Switch the `Zone N` entries you need on. With a local master, switch `Master Local Mode` on too.
 
+> [!TIP]
+> In AP mode the dashboard answers at `/`, so the Wi-Fi setup form moves out of the way. To join
+> the board to a network, open **`http://192.168.4.1/wifi`** — any address the dashboard does not
+> serve lands on the captive portal. That page also accepts a firmware file, which is a cable-free
+> way to update a board that is not on the network yet.
+
 Every hydraulic protection is still active: the web server uses exactly the same request path as
 Home Assistant.
 
@@ -609,8 +628,8 @@ edited. Four mechanical changes:
 
 1. Add `relay_9_pin` … `relay_16_pin` and `zone_9_hidden` … `zone_16_hidden` to the substitutions.
 2. Duplicate the `switch: - platform: gpio` blocks for `relay_9` … `relay_16`.
-3. Duplicate the `switch: - platform: template` blocks (`Zone 9` … `Zone 16`) and the
-   `Zone N Pending` binary sensors.
+3. Duplicate the `switch: - platform: template` blocks (`Zone 9` … `Zone 16`), the
+   `Zone N Pending` binary sensors and the `Zone N Lock` sensors.
 4. In `globals`, widen the arrays from `[9]` to `[17]`; in the engine and in
    `emergency_stop_script`, change the `<= 8` bounds to `<= 16` and widen the `R[]` array.
 
@@ -663,7 +682,8 @@ switch `Cycle Protection` off. **Restore them before putting the system in servi
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | Board does not start after flashing | `GPIO12` high at boot (active-low board) | Remap `relay_7_pin`, see [Pin map](#pin-map). |
-| A zone switch turns itself back off | `Zone Min Off Time` lock | Normal. `Zone N Pending` stays on and the request runs when it expires. |
+| A zone switch turns itself back off | Minimum cycle lock | Normal. Check `Zone N Lock` for the minutes left; the request runs by itself when it expires. For bench testing switch `Cycle Protection` off. |
+| Joined `OpenHydronic-AP` but only see a table of entities | The web server owns `/`, so the setup form moves | Open `http://192.168.4.1/wifi`, or any address the dashboard does not serve. |
 | A zone never opens | Channel reserved for the master, or above `zone_count` | Review `master_channel` and `zone_count`. |
 | The boiler never starts | `Summer Mode` on, or no master configured | Turn `Summer Mode` off; switch `Master Local Mode` on or configure the external entity. |
 | `Master Demand` on but the boiler stays cold | Room-stat wiring | Check the dry contact and polarity in the boiler manual. |

@@ -4,6 +4,20 @@ All notable changes to this firmware are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `Zone N Lock` sensors reporting the minutes left on the minimum cycle, so a
+  request that looks ignored can be explained at a glance.
+
+### Documentation
+
+- The minimum cycle section now states that the guard is proportional to the
+  time since the last change, not a fixed lockout.
+- Troubleshooting covers the Wi-Fi setup form moving to `/wifi` while the web
+  dashboard owns `/`.
+
 ## [1.0.0] - 2026-09-15
 
 First public release.
