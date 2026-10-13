@@ -1,0 +1,735 @@
+/*
+ * OpenHydronic - ESPHome firmware for hydronic heating control
+ * Copyright (C) 2026 David Lopes (https://github.com/davdlic)
+ * Licensed under the GNU General Public License v3.0 - see LICENSE
+ *
+ * Served from flash at /0.js as an ES module. The board only knows about
+ * valves and timers: temperatures and thermostats live in Home Assistant.
+ */
+
+const LABELS = {
+  en: {
+    subtitle: "Hydronic controller",
+    tab_zones: "Zones",
+    tab_system: "System",
+    tab_settings: "Settings",
+    tab_logs: "Logs",
+    logs_empty: "Waiting for the board to log something…",
+    logs_clear: "Clear",
+    open_count: (n) => `${n} open`,
+    offline: "Connection to the board lost. Retrying…",
+    loading: "Connecting to the board…",
+    no_zones: "No zones are enabled on this board.",
+    state_open: "Open",
+    state_closed: "Closed",
+    state_opening: "Opening, the actuator takes a few minutes",
+    state_closing: "Closing",
+    opens_in: ({ value, unit }) => `Opens in ${value} ${unit}`,
+    closes_in: ({ value, unit }) => `Closes in ${value} ${unit}`,
+    master_disabled: "Master off",
+    master_waiting: "Thermal delay",
+    master_on: "Circulator running",
+    master_purging: "Purging heat",
+    modes: "Modes",
+    summer: "Summer",
+    summer_hint: "Heating off, anti-seize keeps running",
+    air_purge: "Air purge",
+    air_purge_hint: "Every valve open with the pump running",
+    anti_seize: "Anti-seize",
+    anti_seize_hint: "Exercise every actuator now",
+    maintenance: "Maintenance",
+    emergency: "Emergency stop",
+    emergency_hint: "Closes everything at once",
+    emergency_confirm: "Close every valve and stop the circulator now?",
+    running: "Running",
+    // First run
+    setup_title: "Connect the board to your network",
+    setup_lead: "Pick your Wi-Fi network. The board restarts and joins it.",
+    setup_password: "Password",
+    setup_save: "Save and connect",
+    setup_saving: "Saving…",
+    setup_done: "Saved. The board is restarting and joining the network.",
+    setup_done_hint: "Rejoin your usual Wi-Fi to carry on.",
+    setup_scan: "Scanning for networks…",
+    setup_manual: "Other network",
+    // Settings
+    timers: "Timers",
+    protections: "Protections",
+    diagnostics: "Diagnostics",
+    firmware: "Firmware",
+    minutes: "min",
+    upload: "Choose a firmware file",
+    uploading: "Uploading…",
+    upload_done: "Written. The board is restarting.",
+    upload_failed: "Upload failed. The board kept the firmware it had.",
+    restart: "Restart the board",
+    restart_confirm: "Restart the board now? Zones close while it reboots.",
+    network: "Network",
+    wifi_change: "Move to another network",
+    wifi_change_hint: "The board restarts as its own access point so you can pick a new one",
+    wifi_change_confirm:
+      "The board will leave this network and come back as OpenHydronic-AP. " +
+      "You then join that access point to choose the new network. Continue?",
+    hints: {
+      "Master Start Delay": "Wait before starting the boiler, so the heads are open first",
+      "Heat Purge Delay": "Keep the pump running after the last zone, to dissipate heat",
+      "Master Min Off Time": "Keep the boiler off this long before it may restart",
+      "Zone Min Run Time": "Minimum a valve stays open, protects the PTC head",
+      "Zone Min Off Time": "Minimum a valve stays closed before reopening",
+      "Air Purge Duration": "How long the manual purge runs",
+      "Master Local Mode": "The reserved channel drives the boiler instead of a zone",
+      "Cycle Protection": "Enforce the minimum cycle. Only turn off on the bench",
+      "Bypass Protection": "Open the bypass when the pump runs against a closed circuit",
+      "Anti-Seize Runs Pump": "Let the weekly routine run the pump as well",
+    },
+  },
+  pt: {
+    subtitle: "Controlador hidráulico",
+    tab_zones: "Zonas",
+    tab_system: "Sistema",
+    tab_settings: "Definições",
+    tab_logs: "Logs",
+    logs_empty: "À espera que a placa escreva alguma coisa…",
+    logs_clear: "Limpar",
+    open_count: (n) => `${n} abertas`,
+    offline: "Ligação à placa perdida. A tentar de novo…",
+    loading: "A ligar à placa…",
+    no_zones: "Esta placa não tem zonas activas.",
+    state_open: "Aberta",
+    state_closed: "Fechada",
+    state_opening: "A abrir, o atuador demora alguns minutos",
+    state_closing: "A fechar",
+    opens_in: ({ value, unit }) => `Abre em ${value} ${unit}`,
+    closes_in: ({ value, unit }) => `Fecha em ${value} ${unit}`,
+    master_disabled: "Master desligado",
+    master_waiting: "Atraso térmico",
+    master_on: "Circulador activo",
+    master_purging: "Purga de calor",
+    modes: "Modos",
+    summer: "Verão",
+    summer_hint: "Aquecimento inibido, anti-gripagem mantém-se",
+    air_purge: "Purga de ar",
+    air_purge_hint: "Todas as válvulas abertas com a bomba a trabalhar",
+    anti_seize: "Anti-gripagem",
+    anti_seize_hint: "Exercitar já todos os atuadores",
+    maintenance: "Manutenção",
+    emergency: "Paragem de emergência",
+    emergency_hint: "Fecha tudo de imediato",
+    emergency_confirm: "Fechar todas as válvulas e parar o circulador agora?",
+    running: "A decorrer",
+    // Primeira utilização
+    setup_title: "Ligar a placa à tua rede",
+    setup_lead: "Escolhe a rede Wi-Fi. A placa reinicia e junta-se a ela.",
+    setup_password: "Password",
+    setup_save: "Gravar e ligar",
+    setup_saving: "A gravar…",
+    setup_done: "Gravado. A placa está a reiniciar e a entrar na rede.",
+    setup_done_hint: "Volta ao teu Wi-Fi habitual para continuar.",
+    setup_scan: "À procura de redes…",
+    setup_manual: "Outra rede",
+    // Definições
+    timers: "Temporizadores",
+    protections: "Proteções",
+    diagnostics: "Diagnóstico",
+    firmware: "Firmware",
+    minutes: "min",
+    upload: "Escolher ficheiro de firmware",
+    uploading: "A enviar…",
+    upload_done: "Gravado. A placa está a reiniciar.",
+    upload_failed: "O envio falhou. A placa manteve o firmware que tinha.",
+    restart: "Reiniciar a placa",
+    restart_confirm: "Reiniciar a placa agora? As zonas fecham durante o arranque.",
+    network: "Rede",
+    wifi_change: "Mudar de rede",
+    wifi_change_hint: "A placa reinicia como ponto de acesso para escolheres outra rede",
+    wifi_change_confirm:
+      "A placa vai sair desta rede e voltar como OpenHydronic-AP. " +
+      "Ligas-te a esse ponto de acesso para escolher a rede nova. Continuar?",
+    hints: {
+      "Master Start Delay": "Espera antes de arrancar a caldeira, para as cabeças já estarem abertas",
+      "Heat Purge Delay": "Mantém a bomba depois da última zona, para dissipar o calor",
+      "Master Min Off Time": "Tempo mínimo com a caldeira parada antes de poder voltar a arrancar",
+      "Zone Min Run Time": "Mínimo que uma válvula fica aberta, protege a cabeça PTC",
+      "Zone Min Off Time": "Mínimo que uma válvula fica fechada antes de reabrir",
+      "Air Purge Duration": "Duração da purga manual",
+      "Master Local Mode": "O canal reservado comanda a caldeira em vez de ser uma zona",
+      "Cycle Protection": "Impõe o ciclo mínimo. Desligar só em bancada",
+      "Bypass Protection": "Abre o bypass quando a bomba corre contra o circuito fechado",
+      "Anti-Seize Runs Pump": "Deixa a rotina semanal exercitar também a bomba",
+    },
+  },
+};
+
+const L = LABELS[String(navigator.language || "en").slice(0, 2)] || LABELS.en;
+
+const VALVE_SVG = `<svg viewBox="0 0 24 24" aria-hidden="true">
+  <path class="arm" d="M12 3v4m0 10v4M3 12h4m10 0h4" stroke-width="2" stroke-linecap="round" fill="none"/>
+  <circle class="core" cx="12" cy="12" r="5"/>
+</svg>`;
+
+const BRAND_SVG = `<svg viewBox="0 0 24 24" aria-hidden="true">
+  <g fill="none" stroke="#ff9800" stroke-width="2.4" stroke-linecap="round">
+    <path d="M7 14c0-2 1.6-2 1.6-4S7 6 7 4"/>
+    <path d="M12 14c0-2 1.6-2 1.6-4S12 6 12 4"/>
+    <path d="M17 14c0-2 1.6-2 1.6-4S17 6 17 4"/>
+  </g>
+  <rect x="4" y="17" width="16" height="3" rx="1.5" fill="#e55100"/>
+</svg>`;
+
+/** Live entity states, keyed by the ESPHome id (`switch/Zone 1`). */
+const entities = new Map();
+/** Recent log lines, oldest first. Bounded so a long session cannot grow forever. */
+const logs = [];
+const LOG_LIMIT = 300;
+let tab = "zones";
+let painting = false;
+
+function paint() {
+  if (painting) return;
+  painting = true;
+  requestAnimationFrame(() => {
+    painting = false;
+    render();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Data
+// ---------------------------------------------------------------------------
+function connect() {
+  const source = new EventSource("/events");
+
+  source.addEventListener("state", (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data && data.id) {
+        entities.set(data.id, data);
+        paint();
+      }
+    } catch (_) {
+      /* a malformed frame must not kill the stream */
+    }
+  });
+
+  source.addEventListener("log", (event) => {
+    const line = parseLog(event.data);
+    logs.push(line);
+    if (logs.length > LOG_LIMIT) logs.shift();
+    // Appending beats repainting: logs can arrive several times a second.
+    if (tab === "logs") appendLog(line);
+  });
+
+  source.addEventListener("open", () => document.body.classList.remove("disconnected"));
+
+  source.addEventListener("error", () => {
+    document.body.classList.add("disconnected");
+    if (source.readyState === EventSource.CLOSED) setTimeout(connect, 3000);
+  });
+}
+
+/** The board routes by entity name, and rejects a POST without a body. */
+function command(domain, name, action, query = "") {
+  const url = `/${domain}/${encodeURIComponent(name)}/${action}${query}`;
+  return fetch(url, { method: "POST", body: "" }).catch(() =>
+    document.body.classList.add("disconnected")
+  );
+}
+
+/** Entity ids are `domain/Name`, so a name is all it takes to find one. */
+function byName(domain, name) {
+  const entity = entities.get(`${domain}/${name}`);
+  return entity ? { name, entity } : null;
+}
+
+function isOn(entity) {
+  return !!entity && (entity.value === true || entity.state === "ON");
+}
+
+/** Numeric fields arrive as strings ("3.0"), so never trust the type. */
+function numberOf(entity, field = "value") {
+  if (!entity) return 0;
+  const value = parseFloat(entity[field]);
+  return Number.isFinite(value) ? value : 0;
+}
+
+// ---------------------------------------------------------------------------
+// Model
+// ---------------------------------------------------------------------------
+function zones() {
+  const found = [];
+  for (const [id, entity] of entities) {
+    const match = /^switch\/(Zone (\d+))$/.exec(id);
+    if (!match) continue;
+    const name = match[1];
+    const channel = Number(match[2]);
+    const relayOn = isOn(entity);
+    const pending = isOn(entities.get(`binary_sensor/${name} Pending`));
+    found.push({
+      channel,
+      name,
+      relayOn,
+      pending,
+      // What the user asked for: the board publishes the relay, and pending
+      // means the request is the opposite of it.
+      requested: pending ? !relayOn : relayOn,
+      lock: Math.round(numberOf(entities.get(`sensor/${name} Lock`))),
+      valve: pending ? "opening" : relayOn ? "open" : "closed",
+    });
+  }
+  return found.sort((a, b) => a.channel - b.channel);
+}
+
+function masterState() {
+  if (isOn(entities.get("binary_sensor/Master Demand"))) return "on";
+  if (isOn(entities.get("binary_sensor/Heat Demand"))) return "waiting";
+  return "disabled";
+}
+
+/** Minutes while there is plenty left, seconds once the countdown is short. */
+function formatLeft(seconds) {
+  return seconds >= 90
+    ? { value: Math.round(seconds / 60), unit: "min" }
+    : { value: seconds, unit: "s" };
+}
+
+function zoneStateText(zone) {
+  // The countdown is only worth showing when it is holding a request back.
+  if (zone.pending && zone.lock > 0) {
+    const left = formatLeft(zone.lock);
+    return { text: zone.relayOn ? L.closes_in(left) : L.opens_in(left), cls: "locked" };
+  }
+  if (zone.pending)
+    return { text: zone.relayOn ? L.state_closing : L.state_opening, cls: "locked" };
+  return { text: zone.relayOn ? L.state_open : L.state_closed, cls: "" };
+}
+
+// ---------------------------------------------------------------------------
+// View
+// ---------------------------------------------------------------------------
+function shell() {
+  document.title = "OpenHydronic";
+  document.body.innerHTML = `
+    <div class="offline">${L.offline}</div>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          ${BRAND_SVG}
+          <div>OpenHydronic<small>${L.subtitle}</small></div>
+        </div>
+        <span class="master-pill" id="master"></span>
+      </div>
+      <nav class="tabs" id="tabs">
+        <button data-tab="zones" class="active">${L.tab_zones}</button>
+        <button data-tab="system">${L.tab_system}</button>
+        <button data-tab="settings">${L.tab_settings}</button>
+        <button data-tab="logs">${L.tab_logs}</button>
+      </nav>
+    </header>
+    <main id="view"><div class="placeholder">${L.loading}</div></main>`;
+
+  document.getElementById("tabs").addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-tab]");
+    if (!button) return;
+    tab = button.dataset.tab;
+    document
+      .querySelectorAll("#tabs button")
+      .forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+    render();
+  });
+}
+
+function render() {
+  const view = document.getElementById("view");
+  if (!view) return;
+
+  const master = masterState();
+  const pill = document.getElementById("master");
+  pill.className = `master-pill ${master}`;
+  pill.textContent = {
+    on: L.master_on,
+    waiting: L.master_waiting,
+    purging: L.master_purging,
+    disabled: L.master_disabled,
+  }[master];
+
+  view.innerHTML =
+    tab === "zones"
+      ? zonesView()
+      : tab === "system"
+        ? systemView()
+        : tab === "logs"
+          ? logsView()
+          : settingsView();
+  wire(view);
+
+  const box = document.getElementById("console");
+  if (box) box.scrollTop = box.scrollHeight;
+}
+
+function zonesView() {
+  const list = zones();
+  if (!list.length)
+    return `<div class="placeholder">${entities.size ? L.no_zones : L.loading}</div>`;
+
+  const open = list.filter((z) => z.relayOn).length;
+  return `
+    <div class="section"><h2>${L.tab_zones}</h2><span class="count">${L.open_count(open)}</span></div>
+    ${list
+      .map((zone) => {
+        const state = zoneStateText(zone);
+        return `
+      <div class="zone ${zone.valve}">
+        <div class="valve">${VALVE_SVG}</div>
+        <div class="zone-info">
+          <div class="zone-name">${escapeHtml(zone.name)}</div>
+          <div class="zone-state ${state.cls}">${state.text}</div>
+        </div>
+        <button class="toggle" aria-pressed="${zone.requested}"
+                aria-label="${escapeHtml(zone.name)}" data-switch="${escapeHtml(zone.name)}"></button>
+      </div>`;
+      })
+      .join("")}`;
+}
+
+function systemView() {
+  const summer = byName("switch", "Summer Mode");
+  const purge = byName("switch", "Air Purge Mode");
+  const antiSeize = byName("button", "Anti-Seize (run now)");
+  const stop = byName("button", "Emergency Stop");
+  const purgeActive = isOn(entities.get("binary_sensor/Air Purge Active"));
+  const seizeActive = isOn(entities.get("binary_sensor/Anti-Seize Active"));
+
+  const rows = [];
+  if (summer)
+    rows.push(modeRow(L.summer, L.summer_hint, {
+      toggle: summer.name,
+      on: isOn(summer.entity),
+    }));
+  if (purge)
+    rows.push(modeRow(L.air_purge, purgeActive ? L.running : L.air_purge_hint, {
+      toggle: purge.name,
+      on: isOn(purge.entity),
+      active: purgeActive,
+    }));
+  if (antiSeize)
+    rows.push(modeRow(L.anti_seize, seizeActive ? L.running : L.anti_seize_hint, {
+      press: antiSeize.name,
+      active: seizeActive,
+    }));
+
+  const danger = stop
+    ? `<div class="section"><h2>${L.maintenance}</h2></div>
+       <button class="danger" data-confirm="${escapeHtml(L.emergency_confirm)}"
+               data-press="${escapeHtml(stop.name)}">
+         <strong>${L.emergency}</strong><span>${L.emergency_hint}</span>
+       </button>`
+    : "";
+
+  if (!rows.length) return `<div class="placeholder">${L.loading}</div>`;
+  return `<div class="section"><h2>${L.modes}</h2></div>${rows.join("")}${danger}`;
+}
+
+const TIMERS = [
+  "Master Start Delay",
+  "Heat Purge Delay",
+  "Master Min Off Time",
+  "Zone Min Run Time",
+  "Zone Min Off Time",
+  "Air Purge Duration",
+];
+
+const PROTECTIONS = [
+  "Master Local Mode",
+  "Cycle Protection",
+  "Bypass Protection",
+  "Anti-Seize Runs Pump",
+];
+
+const DIAGNOSTICS = [
+  ["text_sensor", "IP Address"],
+  ["text_sensor", "SSID"],
+  ["sensor", "Wi-Fi Signal"],
+  ["sensor", "Uptime"],
+  ["sensor", "Open Zones"],
+  ["text_sensor", "ESPHome Version"],
+];
+
+function settingsView() {
+  const timers = TIMERS.map((name) => byName("number", name))
+    .filter(Boolean)
+    .map(({ name, entity }) => {
+      const step = numberOf(entity, "step") || 1;
+      return `
+      <div class="mode">
+        <div class="zone-info">
+          <div class="zone-name">${escapeHtml(entity.name)}</div>
+          <div class="zone-state">${escapeHtml(L.hints[entity.name] || "")}</div>
+        </div>
+        <span class="numeric">
+          <input type="number" data-number="${escapeHtml(name)}" value="${numberOf(entity)}"
+                 min="${numberOf(entity, "min_value")}" max="${numberOf(entity, "max_value") || 120}"
+                 step="${step}"
+                 aria-label="${escapeHtml(entity.name)}">
+          <small>${L.minutes}</small>
+        </span>
+      </div>`;
+    })
+    .join("");
+
+  const protections = PROTECTIONS.map((name) => byName("switch", name))
+    .filter(Boolean)
+    .map(({ name, entity }) =>
+      modeRow(name, L.hints[name] || "", {
+        toggle: name,
+        on: isOn(entity),
+      })
+    )
+    .join("");
+
+  const diagnostics = DIAGNOSTICS.map(([domain, name]) => byName(domain, name))
+    .filter(Boolean)
+    .map(
+      ({ entity }) => `
+      <div class="diag"><span>${escapeHtml(entity.name)}</span>
+      <strong>${escapeHtml(entity.state ?? "")}</strong></div>`
+    )
+    .join("");
+
+  const restart = byName("button", "Restart");
+  const wifi = byName("button", "Wi-Fi Setup");
+  if (!timers && !protections) return `<div class="placeholder">${L.loading}</div>`;
+
+  const network = wifi
+    ? `<div class="section"><h2>${L.network}</h2></div>
+       <div class="mode">
+         <div class="zone-info">
+           <div class="zone-name">${L.wifi_change}</div>
+           <div class="zone-state">${L.wifi_change_hint}</div>
+         </div>
+         <button class="run" data-press="${escapeHtml(wifi.name)}"
+                 data-confirm="${escapeHtml(L.wifi_change_confirm)}">▶</button>
+       </div>`
+    : "";
+
+  return `
+    <div class="section"><h2>${L.timers}</h2></div>${timers}
+    <div class="section"><h2>${L.protections}</h2></div>${protections}
+    ${network}
+    <div class="section"><h2>${L.diagnostics}</h2></div>
+    <div class="card">${diagnostics}</div>
+    <div class="section"><h2>${L.firmware}</h2></div>
+    <div class="card">
+      <label class="upload">
+        <input type="file" id="firmware" accept=".bin" hidden>
+        <span>${L.upload}</span>
+      </label>
+      <p class="note" id="upload-status"></p>
+      ${
+        restart
+          ? `<button class="run wide" data-press="${escapeHtml(restart.name)}"
+                     data-confirm="${escapeHtml(L.restart_confirm)}">${L.restart}</button>`
+          : ""
+      }
+    </div>`;
+}
+
+/** ESPHome ships log lines with ANSI colours; keep the level, drop the codes. */
+function parseLog(raw) {
+  const text = String(raw).replace(/\u001b\[[0-9;]*m/g, "").trimEnd();
+  const level = (/^\[([VDCIWE])\]/.exec(text) || [])[1] || "D";
+  return { text, level };
+}
+
+function logsView() {
+  return `
+    <div class="section"><h2>${L.tab_logs}</h2>
+      <button class="link" id="clear-logs">${L.logs_clear}</button>
+    </div>
+    <pre class="console" id="console">${
+      logs.length
+        ? logs.map(logLine).join("")
+        : `<span class="muted">${L.logs_empty}</span>`
+    }</pre>`;
+}
+
+function logLine(line) {
+  return `<span class="log log-${line.level}">${escapeHtml(line.text)}</span>`;
+}
+
+function appendLog(line) {
+  const box = document.getElementById("console");
+  if (!box) return;
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  if (logs.length === 1) box.innerHTML = "";
+  box.insertAdjacentHTML("beforeend", logLine(line));
+  while (box.childElementCount > LOG_LIMIT) box.removeChild(box.firstElementChild);
+  if (atBottom) box.scrollTop = box.scrollHeight;
+}
+
+function modeRow(title, hint, options) {
+  const control = options.toggle
+    ? `<button class="toggle" aria-pressed="${options.on}" aria-label="${escapeHtml(title)}"
+               data-switch="${escapeHtml(options.toggle)}"></button>`
+    : `<button class="run" data-press="${escapeHtml(options.press)}">▶</button>`;
+  return `
+    <div class="mode ${options.active ? "active" : ""}">
+      <div class="zone-info">
+        <div class="zone-name">${escapeHtml(title)}</div>
+        <div class="zone-state ${options.active ? "locked" : ""}">${escapeHtml(hint)}</div>
+      </div>
+      ${control}
+    </div>`;
+}
+
+function wire(root) {
+  root.querySelectorAll("button[data-switch]").forEach((button) => {
+    button.addEventListener("click", () => {
+      hold(button);
+      command("switch", button.dataset.switch, "toggle");
+    });
+  });
+  root.querySelectorAll("button[data-press]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (button.dataset.confirm && !window.confirm(button.dataset.confirm)) return;
+      hold(button);
+      command("button", button.dataset.press, "press");
+    });
+  });
+  root.querySelectorAll("input[data-number]").forEach((input) => {
+    input.addEventListener("change", () => {
+      command("number", input.dataset.number, "set", `?value=${encodeURIComponent(input.value)}`);
+    });
+  });
+  const firmware = root.querySelector("#firmware");
+  if (firmware) firmware.addEventListener("change", () => upload(firmware));
+
+  const clear = root.querySelector("#clear-logs");
+  if (clear)
+    clear.addEventListener("click", () => {
+      logs.length = 0;
+      render();
+    });
+}
+
+/** Firmware upload, the cable-free way to update a board without a server. */
+function upload(input) {
+  const file = input.files && input.files[0];
+  const status = document.getElementById("upload-status");
+  if (!file || !status) return;
+
+  const body = new FormData();
+  body.append("file", file, file.name);
+  status.textContent = `${L.uploading} ${file.name}`;
+
+  fetch("/update", { method: "POST", body })
+    .then((response) => {
+      status.textContent = response.ok ? L.upload_done : L.upload_failed;
+    })
+    .catch(() => {
+      // The board usually drops the connection as it reboots into the new build.
+      status.textContent = L.upload_done;
+    });
+}
+
+/** Keeps a button inert briefly so a double tap cannot queue two commands. */
+function hold(button) {
+  button.disabled = true;
+  setTimeout(() => (button.disabled = false), 600);
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]
+  );
+}
+
+// ---------------------------------------------------------------------------
+// First run: the captive portal only answers while the board is its own AP.
+// ---------------------------------------------------------------------------
+async function inAccessPointMode() {
+  try {
+    const response = await fetch("/config.json", { cache: "no-store" });
+    if (!response.ok) return null;
+    const data = await response.json();
+    return Array.isArray(data.aps) ? data : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function setupView(config) {
+  const networks = [...config.aps].sort((a, b) => b.rssi - a.rssi);
+  document.title = "OpenHydronic";
+  document.body.innerHTML = `
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">${BRAND_SVG}<div>OpenHydronic<small>${L.subtitle}</small></div></div>
+      </div>
+    </header>
+    <main>
+      <div class="setup">
+        <h1>${L.setup_title}</h1>
+        <p>${L.setup_lead}</p>
+        <form id="wifi">
+          <label class="field">
+            <select name="ssid" id="ssid">
+              ${networks
+                .map(
+                  (ap) =>
+                    `<option value="${escapeHtml(ap.ssid)}">${escapeHtml(ap.ssid)}${
+                      ap.lock ? " 🔒" : ""
+                    }</option>`
+                )
+                .join("")}
+              <option value="">${L.setup_manual}…</option>
+            </select>
+          </label>
+          <label class="field" id="manual" hidden>
+            <input name="manual" placeholder="SSID" autocomplete="off">
+          </label>
+          <label class="field">
+            <input name="psk" type="password" placeholder="${L.setup_password}"
+                   autocomplete="current-password">
+          </label>
+          <button class="primary" type="submit">${L.setup_save}</button>
+        </form>
+        <p class="note" id="status"></p>
+      </div>
+    </main>`;
+
+  const select = document.getElementById("ssid");
+  const manual = document.getElementById("manual");
+  select.addEventListener("change", () => {
+    manual.hidden = select.value !== "";
+  });
+
+  document.getElementById("wifi").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    const ssid = form.get("ssid") || form.get("manual") || "";
+    const status = document.getElementById("status");
+    status.textContent = L.setup_saving;
+    try {
+      await fetch(
+        `/wifisave?ssid=${encodeURIComponent(ssid)}&psk=${encodeURIComponent(form.get("psk") || "")}`,
+        { method: "POST" }
+      );
+      status.innerHTML = `${L.setup_done}<br><span class="muted">${L.setup_done_hint}</span>`;
+    } catch (_) {
+      // The board often drops the connection while saving, which is success.
+      status.innerHTML = `${L.setup_done}<br><span class="muted">${L.setup_done_hint}</span>`;
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Start
+// ---------------------------------------------------------------------------
+inAccessPointMode().then((config) => {
+  if (config) {
+    setupView(config);
+  } else {
+    shell();
+    connect();
+  }
+});

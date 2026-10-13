@@ -8,15 +8,27 @@ All notable changes to this firmware are documented here. The format follows
 
 ### Added
 
-- `Zone N Lock` sensors reporting the minutes left on the minimum cycle, so a
+- A web interface of its own, replacing the stock ESPHome dashboard: zones with
+  valve state and cycle countdown, system modes, timers, diagnostics and live
+  logs, with a setup wizard when the board has no network yet. Embedded in the
+  firmware, nothing loaded from the internet.
+- `Wi-Fi Setup` button, so a board can be moved to another network without a
+  cable or a reflash.
+- Firmware upload from the board's own page (`ota: platform: web_server`).
+- `Zone N Lock` sensors reporting the seconds left on the minimum cycle, so a
   request that looks ignored can be explained at a glance.
+
+### Changed
+
+- The stock ESPHome dashboard is no longer served (`js_url: ""`), and `local`
+  was dropped with it. The firmware got smaller despite gaining an interface.
 
 ### Documentation
 
 - The minimum cycle section now states that the guard is proportional to the
   time since the last change, not a fixed lockout.
-- Troubleshooting covers the Wi-Fi setup form moving to `/wifi` while the web
-  dashboard owns `/`.
+- The captive portal is documented as the fallback it now is: the interface
+  handles setup at `/`, and `/wifi` is what answers if it ever fails to load.
 
 ## [1.0.0] - 2026-09-15
 

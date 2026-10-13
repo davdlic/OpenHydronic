@@ -47,8 +47,10 @@ presets and the sensor watchdog live in the companion integration,
 - **Weekly anti-seize routine**, so valves do not calcify over the summer.
 - **Manual air purge**: every valve open with the pump running, to bleed the circuit.
 - **Emergency stop** that ignores the minimum timers.
-- **Runs without the server.** Encrypted native API, standalone web server on port 80, recovery
-  access point, captive portal, OTA updates. No cloud, no internet needed.
+- **Its own web interface** on port 80: zones, modes, timers and live logs, with a setup wizard on
+  first run. Built for a phone, served from flash, nothing loaded from the internet.
+- **Runs without the server.** Encrypted native API, recovery access point, captive portal, and OTA
+  updates either over the network or by uploading a file to the board. No cloud.
 - **Parameterised.** Channel count, GPIO map, channel roles and every timer are set at the top of
   the YAML; the timers are also runtime entities, adjustable without a reflash.
 
@@ -429,7 +431,7 @@ The request is never dropped: it stays **pending** and runs as soon as the lock 
 entities report this, and the Lovelace card shows the same thing as a blinking valve:
 
 - `Zone N Pending` — the request differs from the relay's real state
-- `Zone N Lock` — minutes left before it can be applied, `0` when the zone is free
+- `Zone N Lock` — seconds left before it can be applied, `0` when the zone is free
 
 Exceptions that ignore the minimum cycle: `Emergency Stop`, anti-seize and air purge. For bench
 testing, switch `Cycle Protection` off so the relays answer instantly, and **switch it back on
@@ -486,6 +488,33 @@ ignoring the minimum timers.
 
 ---
 
+## Web interface
+
+The board serves its own interface on port 80. It is not the stock ESPHome dashboard: that one is
+disabled, and `ui/openhydronic.css` plus `ui/openhydronic.js` are embedded in the firmware at build
+time. Nothing is fetched from the internet, and the page is built for a phone held in front of the
+manifold.
+
+| Tab | What it is for |
+|---|---|
+| **Zones** | Valve state per zone, the countdown while the minimum cycle holds a request, and a toggle that shows what you asked for rather than what the relay is doing |
+| **System** | Summer mode, air purge with its countdown, anti-seize, and the emergency stop behind a confirmation |
+| **Settings** | The six timers with a line each explaining what they protect, the protection switches, diagnostics, firmware upload, restart, and moving the board to another network |
+| **Logs** | The live ESPHome log, coloured by level |
+
+**First run.** With no network stored the board comes up as `OpenHydronic-AP` and the page opens a
+setup wizard: it scans, you pick your network, it saves and restarts. No hidden address to guess.
+
+**Moving to another network.** Settings → Network → *Move to another network* clears the stored
+credentials and restarts the board into that same wizard. Until you finish it the board stays in
+access point mode, which is the price of not having a reset button.
+
+> [!NOTE]
+> If the interface ever fails to load, the ESPHome captive portal still answers on any address the
+> page does not serve, such as `/wifi`, and it accepts a firmware upload. There is always a way back.
+
+---
+
 ## Entities
 
 Prefixed with `${friendly_name}` in Home Assistant.
@@ -501,6 +530,7 @@ Prefixed with `${friendly_name}` in Home Assistant.
 | `Anti-Seize (run now)` | `button` | Runs the anti-seize cycle. |
 | `Emergency Stop` | `button` | Closes everything now. |
 | `Restart` | `button` | Reboots the ESP32. |
+| `Wi-Fi Setup` | `button` | Clears the stored network and restarts into the setup wizard. |
 
 ### Configuration (config category)
 
@@ -524,7 +554,7 @@ Prefixed with `${friendly_name}` in Home Assistant.
 | `Master Demand` | `binary_sensor` | The board says the boiler or pump should be running. |
 | `Heat Demand` | `binary_sensor` | At least one zone is asking for heat, before the delay. |
 | `Zone 1..8 Pending` | `binary_sensor` | Request differs from reality: opening or closing. |
-| `Zone 1..8 Lock` | `sensor` (min) | Minutes left on the minimum cycle, `0` when free to switch. |
+| `Zone 1..8 Lock` | `sensor` (s) | Seconds left on the minimum cycle, `0` when free to switch. |
 | `Anti-Seize Active` | `binary_sensor` | Exercise cycle in progress. |
 | `Air Purge Active` | `binary_sensor` | Air purge in progress. |
 | `Open Zones` | `sensor` | Number of zones physically open. |
@@ -582,10 +612,9 @@ Manual heating procedure:
 4. Switch the `Zone N` entries you need on. With a local master, switch `Master Local Mode` on too.
 
 > [!TIP]
-> In AP mode the dashboard answers at `/`, so the Wi-Fi setup form moves out of the way. To join
-> the board to a network, open **`http://192.168.4.1/wifi`** — any address the dashboard does not
-> serve lands on the captive portal. That page also accepts a firmware file, which is a cable-free
-> way to update a board that is not on the network yet.
+> In access point mode the page opens straight into the setup wizard, so there is nothing to find.
+> The ESPHome captive portal stays available as a fallback on any address the interface does not
+> serve, such as `http://192.168.4.1/wifi`, and it accepts a firmware file.
 
 Every hydraulic protection is still active: the web server uses exactly the same request path as
 Home Assistant.

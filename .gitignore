@@ -10,3 +10,7 @@ secrets.yaml
 .vscode/
 .idea/
 .DS_Store
+
+# Python bytecode from the development server
+__pycache__/
+*.py[cod]

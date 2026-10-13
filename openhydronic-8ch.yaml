@@ -153,6 +153,8 @@ api:
 ota:
   - platform: esphome
     password: !secret ota_password
+  # Firmware upload from the board's own page, for installs without a server.
+  - platform: web_server
 
 # -----------------------------------------------------------------------------
 #  Network: station + recovery access point.
@@ -173,12 +175,15 @@ improv_serial:
 
 # -----------------------------------------------------------------------------
 #  Standalone web server, the fallback when Home Assistant is down.
-#  local: true -> assets in flash, no internet needed.
+#  js_url empty -> the stock ESPHome dashboard never loads; ui/ owns the page.
+#  Both files are embedded in the firmware, so nothing comes from the internet.
 # -----------------------------------------------------------------------------
 web_server:
   port: 80
   version: 2
-  local: true
+  js_url: ""
+  css_include: ui/openhydronic.css
+  js_include: ui/openhydronic.js
   auth:
     username: !secret web_username
     password: !secret web_password
@@ -730,6 +735,18 @@ button:
     name: "Restart"
     entity_category: diagnostic
 
+  # Moving the board to another network. Clearing the stored credentials makes
+  # it come back as its own access point, where the setup page writes the new
+  # ones. Until that is done the board stays in AP mode.
+  - platform: template
+    name: "Wi-Fi Setup"
+    icon: mdi:wifi-cog
+    entity_category: config
+    on_press:
+      - lambda: wifi::global_wifi_component->save_wifi_sta("", "");
+      - delay: 2s
+      - lambda: App.safe_reboot();
+
 # =============================================================================
 #  STATE TELEMETRY
 #  "Master Demand" reports whether the board is calling for heat. The Home
@@ -829,16 +846,17 @@ sensor:
       if (id(master_local_mode).state && ${master_channel} >= 1 && id(master_state)) n--;
       return n < 0 ? 0 : n;
 
-  # Minutes left before the minimum cycle lets the pending request through.
-  # Zero means the zone is free to switch right now.
+  # Seconds left before the minimum cycle lets the pending request through.
+  # Zero means the zone is free to switch right now. Seconds rather than
+  # minutes so a countdown that is nearly over still visibly moves.
   - platform: template
     name: "Zone 1 Lock"
     icon: mdi:lock-clock
-    unit_of_measurement: "min"
+    unit_of_measurement: "s"
     accuracy_decimals: 0
     entity_category: diagnostic
     internal: ${zone_1_hidden}
-    update_interval: 10s
+    update_interval: 5s
     lambda: |-
       if (!id(cycle_guard).state) return 0.0f;
       const bool on = id(relay_1).state;
@@ -847,16 +865,16 @@ sensor:
       const uint32_t since = millis() - (on ? id(zone_last_on)[1]
                                             : id(zone_last_off)[1]);
       if (since >= need) return 0.0f;
-      return ceilf((need - since) / 60000.0f);
+      return ceilf((need - since) / 1000.0f);
 
   - platform: template
     name: "Zone 2 Lock"
     icon: mdi:lock-clock
-    unit_of_measurement: "min"
+    unit_of_measurement: "s"
     accuracy_decimals: 0
     entity_category: diagnostic
     internal: ${zone_2_hidden}
-    update_interval: 10s
+    update_interval: 5s
     lambda: |-
       if (!id(cycle_guard).state) return 0.0f;
       const bool on = id(relay_2).state;
@@ -865,16 +883,16 @@ sensor:
       const uint32_t since = millis() - (on ? id(zone_last_on)[2]
                                             : id(zone_last_off)[2]);
       if (since >= need) return 0.0f;
-      return ceilf((need - since) / 60000.0f);
+      return ceilf((need - since) / 1000.0f);
 
   - platform: template
     name: "Zone 3 Lock"
     icon: mdi:lock-clock
-    unit_of_measurement: "min"
+    unit_of_measurement: "s"
     accuracy_decimals: 0
     entity_category: diagnostic
     internal: ${zone_3_hidden}
-    update_interval: 10s
+    update_interval: 5s
     lambda: |-
       if (!id(cycle_guard).state) return 0.0f;
       const bool on = id(relay_3).state;
@@ -883,16 +901,16 @@ sensor:
       const uint32_t since = millis() - (on ? id(zone_last_on)[3]
                                             : id(zone_last_off)[3]);
       if (since >= need) return 0.0f;
-      return ceilf((need - since) / 60000.0f);
+      return ceilf((need - since) / 1000.0f);
 
   - platform: template
     name: "Zone 4 Lock"
     icon: mdi:lock-clock
-    unit_of_measurement: "min"
+    unit_of_measurement: "s"
     accuracy_decimals: 0
     entity_category: diagnostic
     internal: ${zone_4_hidden}
-    update_interval: 10s
+    update_interval: 5s
     lambda: |-
       if (!id(cycle_guard).state) return 0.0f;
       const bool on = id(relay_4).state;
@@ -901,16 +919,16 @@ sensor:
       const uint32_t since = millis() - (on ? id(zone_last_on)[4]
                                             : id(zone_last_off)[4]);
       if (since >= need) return 0.0f;
-      return ceilf((need - since) / 60000.0f);
+      return ceilf((need - since) / 1000.0f);
 
   - platform: template
     name: "Zone 5 Lock"
     icon: mdi:lock-clock
-    unit_of_measurement: "min"
+    unit_of_measurement: "s"
     accuracy_decimals: 0
     entity_category: diagnostic
     internal: ${zone_5_hidden}
-    update_interval: 10s
+    update_interval: 5s
     lambda: |-
       if (!id(cycle_guard).state) return 0.0f;
       const bool on = id(relay_5).state;
@@ -919,16 +937,16 @@ sensor:
       const uint32_t since = millis() - (on ? id(zone_last_on)[5]
                                             : id(zone_last_off)[5]);
       if (since >= need) return 0.0f;
-      return ceilf((need - since) / 60000.0f);
+      return ceilf((need - since) / 1000.0f);
 
   - platform: template
     name: "Zone 6 Lock"
     icon: mdi:lock-clock
-    unit_of_measurement: "min"
+    unit_of_measurement: "s"
     accuracy_decimals: 0
     entity_category: diagnostic
     internal: ${zone_6_hidden}
-    update_interval: 10s
+    update_interval: 5s
     lambda: |-
       if (!id(cycle_guard).state) return 0.0f;
       const bool on = id(relay_6).state;
@@ -937,16 +955,16 @@ sensor:
       const uint32_t since = millis() - (on ? id(zone_last_on)[6]
                                             : id(zone_last_off)[6]);
       if (since >= need) return 0.0f;
-      return ceilf((need - since) / 60000.0f);
+      return ceilf((need - since) / 1000.0f);
 
   - platform: template
     name: "Zone 7 Lock"
     icon: mdi:lock-clock
-    unit_of_measurement: "min"
+    unit_of_measurement: "s"
     accuracy_decimals: 0
     entity_category: diagnostic
     internal: ${zone_7_hidden}
-    update_interval: 10s
+    update_interval: 5s
     lambda: |-
       if (!id(cycle_guard).state) return 0.0f;
       const bool on = id(relay_7).state;
@@ -955,16 +973,16 @@ sensor:
       const uint32_t since = millis() - (on ? id(zone_last_on)[7]
                                             : id(zone_last_off)[7]);
       if (since >= need) return 0.0f;
-      return ceilf((need - since) / 60000.0f);
+      return ceilf((need - since) / 1000.0f);
 
   - platform: template
     name: "Zone 8 Lock"
     icon: mdi:lock-clock
-    unit_of_measurement: "min"
+    unit_of_measurement: "s"
     accuracy_decimals: 0
     entity_category: diagnostic
     internal: ${zone_8_hidden}
-    update_interval: 10s
+    update_interval: 5s
     lambda: |-
       if (!id(cycle_guard).state) return 0.0f;
       const bool on = id(relay_8).state;
@@ -973,7 +991,7 @@ sensor:
       const uint32_t since = millis() - (on ? id(zone_last_on)[8]
                                             : id(zone_last_off)[8]);
       if (since >= need) return 0.0f;
-      return ceilf((need - since) / 60000.0f);
+      return ceilf((need - since) / 1000.0f);
 
   - platform: uptime
     name: "Uptime"

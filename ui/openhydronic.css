@@ -1,0 +1,424 @@
+/*
+ * OpenHydronic - ESPHome firmware for hydronic heating control
+ * Copyright (C) 2026 David Lopes (https://github.com/davdlic)
+ * Licensed under the GNU General Public License v3.0 - see LICENSE
+ *
+ * Served from flash at /0.css. Nothing here loads from the internet.
+ */
+
+:root {
+  --bg: #0f1020;
+  --bg-elev: #181a30;
+  --bg-elev-2: #1f2140;
+  --border: #2a2d4a;
+  --text: #e7e9f5;
+  --muted: #8a8eaa;
+  --accent: #ff9800;
+  --accent-deep: #e55100;
+  --closed: #6b7280;
+  --open: #ff9800;
+  --fault: #ef4444;
+  --ok: #4ade80;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+esp-app { display: none; }          /* stock element, unused */
+
+main {
+  padding: 1rem;
+  padding-bottom: 4rem;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+/* ---------- Top bar ---------- */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  padding: max(0.75rem, env(safe-area-inset-top)) 1rem 0.75rem;
+}
+
+.topbar-inner {
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.brand svg { width: 26px; height: 26px; flex: none; }
+
+.brand small {
+  display: block;
+  font-weight: 400;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.master-pill {
+  margin-left: auto;
+  font-size: 0.78rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.master-pill.on { color: var(--accent); border-color: var(--accent); }
+.master-pill.waiting, .master-pill.purging { color: var(--accent); border-color: var(--border); }
+.master-pill.waiting::before, .master-pill.purging::before {
+  content: "";
+  display: inline-block;
+  width: 7px; height: 7px;
+  margin-right: 0.4rem;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+/* ---------- Tabs ---------- */
+.tabs {
+  max-width: 720px;
+  margin: 0.75rem auto 0;
+  display: flex;
+  gap: 0.4rem;
+}
+
+.tabs button {
+  flex: 1;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.5rem 0.25rem;
+  cursor: pointer;
+}
+
+.tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+
+/* ---------- Connection banner ---------- */
+.offline {
+  display: none;
+  background: var(--fault);
+  color: #fff;
+  text-align: center;
+  padding: 0.6rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+body.disconnected .offline { display: block; }
+body.disconnected main { opacity: 0.55; pointer-events: none; }
+
+/* ---------- Section heading ---------- */
+.section {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin: 1.4rem 0 0.6rem;
+}
+
+.section h2 {
+  margin: 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.section .count { font-size: 0.78rem; color: var(--muted); margin-left: auto; }
+
+/* ---------- Zone card ---------- */
+.zone {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+  margin-bottom: 0.6rem;
+}
+
+.zone.fault { border-color: var(--fault); }
+
+.valve {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--bg-elev-2);
+  display: grid;
+  place-items: center;
+}
+
+.valve svg { width: 24px; height: 24px; }
+.valve circle.core { fill: var(--closed); transition: fill 0.3s; }
+.valve path.arm { stroke: var(--closed); transition: stroke 0.3s; }
+
+.zone.open .valve circle.core, .zone.opening .valve circle.core { fill: var(--open); }
+.zone.open .valve path.arm, .zone.opening .valve path.arm { stroke: var(--open); }
+.zone.fault .valve circle.core { fill: var(--fault); }
+.zone.fault .valve path.arm { stroke: var(--fault); }
+.zone.opening .valve { animation: pulse 1.2s ease-in-out infinite; }
+
+.zone-info { min-width: 0; flex: 1; }
+
+.zone-name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.zone-state { font-size: 0.8rem; color: var(--muted); margin-top: 0.15rem; }
+.zone-state.locked { color: var(--accent); }
+.zone-state.fault { color: var(--fault); }
+
+/* ---------- Toggle ---------- */
+.toggle {
+  flex: none;
+  width: 56px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev-2);
+  position: relative;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.25s, border-color 0.25s;
+}
+
+.toggle::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 0.25s, background 0.25s;
+}
+
+.toggle[aria-pressed="true"] {
+  background: linear-gradient(180deg, var(--accent), var(--accent-deep));
+  border-color: var(--accent-deep);
+}
+
+.toggle[aria-pressed="true"]::after { transform: translateX(24px); background: #fff; }
+.toggle:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ---------- Modes ---------- */
+.mode {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+  margin-bottom: 0.6rem;
+}
+
+.mode.active { border-color: var(--accent); }
+
+.run {
+  flex: none;
+  width: 44px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev-2);
+  color: var(--text);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.run:active { background: var(--bg); }
+
+.danger {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  align-items: flex-start;
+  background: transparent;
+  border: 1px solid var(--fault);
+  color: var(--fault);
+  border-radius: 14px;
+  padding: 0.9rem 1rem;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.danger span { color: var(--muted); font-size: 0.8rem; }
+.danger:active { background: rgba(239, 68, 68, 0.12); }
+
+/* ---------- Settings ---------- */
+.numeric { display: flex; align-items: center; gap: 0.4rem; flex: none; }
+
+.numeric input {
+  width: 72px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font: inherit;
+  text-align: right;
+  padding: 0.45rem 0.5rem;
+}
+
+.numeric input:focus { outline: none; border-color: var(--accent); }
+.numeric small { color: var(--muted); font-size: 0.75rem; }
+
+.card {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 0.5rem 1rem;
+}
+
+.diag {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0;
+  font-size: 0.88rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.diag:last-child { border-bottom: none; }
+.diag span { color: var(--muted); }
+.diag strong { font-weight: 600; text-align: right; word-break: break-all; }
+
+.upload {
+  display: block;
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  padding: 0.9rem;
+  margin: 0.6rem 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.upload:active { border-color: var(--accent); color: var(--text); }
+.run.wide { width: 100%; margin-bottom: 0.8rem; }
+
+/* ---------- First run ---------- */
+.setup { padding-top: 0.5rem; }
+.setup h1 { font-size: 1.25rem; margin: 0 0 0.4rem; }
+.setup p { color: var(--muted); font-size: 0.9rem; margin: 0 0 1.2rem; }
+
+.field { display: block; margin-bottom: 0.7rem; }
+
+.field select, .field input {
+  width: 100%;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  font: inherit;
+  padding: 0.8rem 0.9rem;
+}
+
+.field select:focus, .field input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.primary {
+  width: 100%;
+  border: none;
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  font: inherit;
+  font-weight: 600;
+  color: #1a1000;
+  background: linear-gradient(180deg, var(--accent), var(--accent-deep));
+  cursor: pointer;
+}
+
+.primary:active { filter: brightness(0.92); }
+
+.note { margin-top: 1rem !important; color: var(--text) !important; font-size: 0.9rem; }
+.muted { color: var(--muted); }
+
+/* ---------- Logs ---------- */
+.console {
+  background: #0a0b16;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 0.75rem 0.9rem;
+  margin: 0;
+  height: 62vh;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.log { display: block; color: var(--muted); }
+.log-I { color: var(--text); }
+.log-C { color: var(--accent); }
+.log-W { color: #fbbf24; }
+.log-E { color: var(--fault); }
+
+.link {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* ---------- Empty / loading ---------- */
+.placeholder {
+  text-align: center;
+  color: var(--muted);
+  padding: 2.5rem 1rem;
+  font-size: 0.9rem;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
