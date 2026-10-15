@@ -858,7 +858,8 @@ sensor:
     internal: ${zone_1_hidden}
     update_interval: 5s
     lambda: |-
-      if (!id(cycle_guard).state) return 0.0f;
+      // The engine also bypasses the guard during purge and anti-seize.
+      if (!id(cycle_guard).state || id(override_mode) != 0) return 0.0f;
       const bool on = id(relay_1).state;
       const uint32_t need = (uint32_t)((on ? id(min_run_time).state
                                            : id(min_off_time).state) * 60000.0f);
@@ -876,7 +877,8 @@ sensor:
     internal: ${zone_2_hidden}
     update_interval: 5s
     lambda: |-
-      if (!id(cycle_guard).state) return 0.0f;
+      // The engine also bypasses the guard during purge and anti-seize.
+      if (!id(cycle_guard).state || id(override_mode) != 0) return 0.0f;
       const bool on = id(relay_2).state;
       const uint32_t need = (uint32_t)((on ? id(min_run_time).state
                                            : id(min_off_time).state) * 60000.0f);
@@ -894,7 +896,8 @@ sensor:
     internal: ${zone_3_hidden}
     update_interval: 5s
     lambda: |-
-      if (!id(cycle_guard).state) return 0.0f;
+      // The engine also bypasses the guard during purge and anti-seize.
+      if (!id(cycle_guard).state || id(override_mode) != 0) return 0.0f;
       const bool on = id(relay_3).state;
       const uint32_t need = (uint32_t)((on ? id(min_run_time).state
                                            : id(min_off_time).state) * 60000.0f);
@@ -912,7 +915,8 @@ sensor:
     internal: ${zone_4_hidden}
     update_interval: 5s
     lambda: |-
-      if (!id(cycle_guard).state) return 0.0f;
+      // The engine also bypasses the guard during purge and anti-seize.
+      if (!id(cycle_guard).state || id(override_mode) != 0) return 0.0f;
       const bool on = id(relay_4).state;
       const uint32_t need = (uint32_t)((on ? id(min_run_time).state
                                            : id(min_off_time).state) * 60000.0f);
@@ -930,7 +934,8 @@ sensor:
     internal: ${zone_5_hidden}
     update_interval: 5s
     lambda: |-
-      if (!id(cycle_guard).state) return 0.0f;
+      // The engine also bypasses the guard during purge and anti-seize.
+      if (!id(cycle_guard).state || id(override_mode) != 0) return 0.0f;
       const bool on = id(relay_5).state;
       const uint32_t need = (uint32_t)((on ? id(min_run_time).state
                                            : id(min_off_time).state) * 60000.0f);
@@ -948,7 +953,8 @@ sensor:
     internal: ${zone_6_hidden}
     update_interval: 5s
     lambda: |-
-      if (!id(cycle_guard).state) return 0.0f;
+      // The engine also bypasses the guard during purge and anti-seize.
+      if (!id(cycle_guard).state || id(override_mode) != 0) return 0.0f;
       const bool on = id(relay_6).state;
       const uint32_t need = (uint32_t)((on ? id(min_run_time).state
                                            : id(min_off_time).state) * 60000.0f);
@@ -966,7 +972,8 @@ sensor:
     internal: ${zone_7_hidden}
     update_interval: 5s
     lambda: |-
-      if (!id(cycle_guard).state) return 0.0f;
+      // The engine also bypasses the guard during purge and anti-seize.
+      if (!id(cycle_guard).state || id(override_mode) != 0) return 0.0f;
       const bool on = id(relay_7).state;
       const uint32_t need = (uint32_t)((on ? id(min_run_time).state
                                            : id(min_off_time).state) * 60000.0f);
@@ -984,7 +991,8 @@ sensor:
     internal: ${zone_8_hidden}
     update_interval: 5s
     lambda: |-
-      if (!id(cycle_guard).state) return 0.0f;
+      // The engine also bypasses the guard during purge and anti-seize.
+      if (!id(cycle_guard).state || id(override_mode) != 0) return 0.0f;
       const bool on = id(relay_8).state;
       const uint32_t need = (uint32_t)((on ? id(min_run_time).state
                                            : id(min_off_time).state) * 60000.0f);

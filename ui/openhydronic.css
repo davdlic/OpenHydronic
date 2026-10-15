@@ -340,6 +340,7 @@ body.disconnected main { opacity: 0.55; pointer-events: none; }
 .setup p { color: var(--muted); font-size: 0.9rem; margin: 0 0 1.2rem; }
 
 .field { display: block; margin-bottom: 0.7rem; }
+.field[hidden] { display: none; }
 
 .field select, .field input {
   width: 100%;

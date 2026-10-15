@@ -24,6 +24,8 @@ const LABELS = {
     state_closed: "Closed",
     state_opening: "Opening, the actuator takes a few minutes",
     state_closing: "Closing",
+    state_purging: "Open for the air purge",
+    state_exercising: "Open for the anti-seize cycle",
     opens_in: ({ value, unit }) => `Opens in ${value} ${unit}`,
     closes_in: ({ value, unit }) => `Closes in ${value} ${unit}`,
     master_disabled: "Master off",
@@ -52,6 +54,7 @@ const LABELS = {
     setup_done_hint: "Rejoin your usual Wi-Fi to carry on.",
     setup_scan: "Scanning for networks…",
     setup_manual: "Other network",
+    setup_failed: "The board refused the credentials. Check the password and try again.",
     // Settings
     timers: "Timers",
     protections: "Protections",
@@ -99,6 +102,8 @@ const LABELS = {
     state_closed: "Fechada",
     state_opening: "A abrir, o atuador demora alguns minutos",
     state_closing: "A fechar",
+    state_purging: "Aberta pela purga de ar",
+    state_exercising: "Aberta pela anti-gripagem",
     opens_in: ({ value, unit }) => `Abre em ${value} ${unit}`,
     closes_in: ({ value, unit }) => `Fecha em ${value} ${unit}`,
     master_disabled: "Master desligado",
@@ -127,6 +132,7 @@ const LABELS = {
     setup_done_hint: "Volta ao teu Wi-Fi habitual para continuar.",
     setup_scan: "À procura de redes…",
     setup_manual: "Outra rede",
+    setup_failed: "A placa recusou as credenciais. Confirma a password e tenta de novo.",
     // Definições
     timers: "Temporizadores",
     protections: "Proteções",
@@ -176,8 +182,10 @@ const BRAND_SVG = `<svg viewBox="0 0 24 24" aria-hidden="true">
   <rect x="4" y="17" width="16" height="3" rx="1.5" fill="#e55100"/>
 </svg>`;
 
-/** Live entity states, keyed by the ESPHome id (`switch/Zone 1`). */
+/** Live entity states, keyed by the raw ESPHome id. */
 const entities = new Map();
+/** `domain/Name` -> raw id, so lookups do not depend on the id format. */
+const index = new Map();
 /** Recent log lines, oldest first. Bounded so a long session cannot grow forever. */
 const logs = [];
 const LOG_LIMIT = 300;
@@ -203,7 +211,12 @@ function connect() {
     try {
       const data = JSON.parse(event.data);
       if (data && data.id) {
-        entities.set(data.id, data);
+        // Only the first frame of each entity carries name, icon and limits;
+        // later ones are id/value/state, so merge instead of replacing.
+        const merged = { ...entities.get(data.id), ...data };
+        entities.set(data.id, merged);
+        const domain = merged.domain || parseId(data.id).domain;
+        if (merged.name) index.set(`${domain}/${merged.name}`, data.id);
         paint();
       }
     } catch (_) {
@@ -227,18 +240,31 @@ function connect() {
   });
 }
 
-/** The board routes by entity name, and rejects a POST without a body. */
-function command(domain, name, action, query = "") {
-  const url = `/${domain}/${encodeURIComponent(name)}/${action}${query}`;
+/** Splits an entity id into its domain and the key the board routes on.
+ *
+ * ESPHome 2026.1 changed ids from `switch-zone_1` to `switch/Zone 1`, and the
+ * command URL follows whichever of the two that build uses. Both share the
+ * shape `domain<separator>key`, so splitting beats assuming a format.
+ */
+function parseId(rawId) {
+  const index = rawId.includes("/") ? rawId.indexOf("/") : rawId.indexOf("-");
+  return { domain: rawId.slice(0, index), key: rawId.slice(index + 1) };
+}
+
+/** The board rejects a POST without a body with 411. */
+function command(rawId, action, query = "") {
+  const { domain, key } = parseId(rawId);
+  const url = `/${domain}/${encodeURIComponent(key)}/${action}${query}`;
   return fetch(url, { method: "POST", body: "" }).catch(() =>
     document.body.classList.add("disconnected")
   );
 }
 
-/** Entity ids are `domain/Name`, so a name is all it takes to find one. */
+/** Finds an entity by the name we control, whatever the id format is. */
 function byName(domain, name) {
-  const entity = entities.get(`${domain}/${name}`);
-  return entity ? { name, entity } : null;
+  const rawId = index.get(`${domain}/${name}`);
+  const entity = rawId && entities.get(rawId);
+  return entity ? { rawId, name, entity } : null;
 }
 
 function isOn(entity) {
@@ -257,22 +283,24 @@ function numberOf(entity, field = "value") {
 // ---------------------------------------------------------------------------
 function zones() {
   const found = [];
-  for (const [id, entity] of entities) {
-    const match = /^switch\/(Zone (\d+))$/.exec(id);
+  for (const label of index.keys()) {
+    const match = /^switch\/(Zone (\d+))$/.exec(label);
     if (!match) continue;
     const name = match[1];
     const channel = Number(match[2]);
+    const entity = entities.get(index.get(label));
     const relayOn = isOn(entity);
-    const pending = isOn(entities.get(`binary_sensor/${name} Pending`));
+    const pending = isOn(byName("binary_sensor", `${name} Pending`)?.entity);
     found.push({
       channel,
       name,
+      rawId: index.get(label),
       relayOn,
       pending,
       // What the user asked for: the board publishes the relay, and pending
       // means the request is the opposite of it.
       requested: pending ? !relayOn : relayOn,
-      lock: Math.round(numberOf(entities.get(`sensor/${name} Lock`))),
+      lock: Math.round(numberOf(byName("sensor", `${name} Lock`)?.entity)),
       valve: pending ? "opening" : relayOn ? "open" : "closed",
     });
   }
@@ -280,9 +308,11 @@ function zones() {
 }
 
 function masterState() {
-  if (isOn(entities.get("binary_sensor/Master Demand"))) return "on";
-  if (isOn(entities.get("binary_sensor/Heat Demand"))) return "waiting";
-  return "disabled";
+  const master = isOn(byName("binary_sensor", "Master Demand")?.entity);
+  const heat = isOn(byName("binary_sensor", "Heat Demand")?.entity);
+  // Master running with nothing asking for heat is the residual purge.
+  if (master) return heat ? "on" : "purging";
+  return heat ? "waiting" : "disabled";
 }
 
 /** Minutes while there is plenty left, seconds once the countdown is short. */
@@ -292,7 +322,19 @@ function formatLeft(seconds) {
     : { value: seconds, unit: "s" };
 }
 
+/** Air purge and anti-seize drive the relays without touching the requests. */
+function override() {
+  if (isOn(byName("binary_sensor", "Air Purge Active")?.entity)) return "purge";
+  if (isOn(byName("binary_sensor", "Anti-Seize Active")?.entity)) return "seize";
+  return null;
+}
+
 function zoneStateText(zone) {
+  // A forced zone is open because of a mode, not because of a stale request.
+  if (zone.relayOn) {
+    const mode = override();
+    if (mode) return { text: mode === "purge" ? L.state_purging : L.state_exercising, cls: "locked" };
+  }
   // The countdown is only worth showing when it is holding a request back.
   if (zone.pending && zone.lock > 0) {
     const left = formatLeft(zone.lock);
@@ -342,6 +384,14 @@ function render() {
   const view = document.getElementById("view");
   if (!view) return;
 
+  // Sensors publish every few seconds; repainting then would wipe a field the
+  // user is still typing into, so wait until it loses focus.
+  const editing = document.activeElement;
+  if (editing && editing.tagName === "INPUT" && view.contains(editing)) {
+    editing.addEventListener("blur", () => paint(), { once: true });
+    return;
+  }
+
   const master = masterState();
   const pill = document.getElementById("master");
   pill.className = `master-pill ${master}`;
@@ -385,7 +435,7 @@ function zonesView() {
           <div class="zone-state ${state.cls}">${state.text}</div>
         </div>
         <button class="toggle" aria-pressed="${zone.requested}"
-                aria-label="${escapeHtml(zone.name)}" data-switch="${escapeHtml(zone.name)}"></button>
+                aria-label="${escapeHtml(zone.name)}" data-switch="${escapeHtml(zone.rawId)}"></button>
       </div>`;
       })
       .join("")}`;
@@ -396,31 +446,31 @@ function systemView() {
   const purge = byName("switch", "Air Purge Mode");
   const antiSeize = byName("button", "Anti-Seize (run now)");
   const stop = byName("button", "Emergency Stop");
-  const purgeActive = isOn(entities.get("binary_sensor/Air Purge Active"));
-  const seizeActive = isOn(entities.get("binary_sensor/Anti-Seize Active"));
+  const purgeActive = isOn(byName("binary_sensor", "Air Purge Active")?.entity);
+  const seizeActive = isOn(byName("binary_sensor", "Anti-Seize Active")?.entity);
 
   const rows = [];
   if (summer)
     rows.push(modeRow(L.summer, L.summer_hint, {
-      toggle: summer.name,
+      toggle: summer.rawId,
       on: isOn(summer.entity),
     }));
   if (purge)
     rows.push(modeRow(L.air_purge, purgeActive ? L.running : L.air_purge_hint, {
-      toggle: purge.name,
+      toggle: purge.rawId,
       on: isOn(purge.entity),
       active: purgeActive,
     }));
   if (antiSeize)
     rows.push(modeRow(L.anti_seize, seizeActive ? L.running : L.anti_seize_hint, {
-      press: antiSeize.name,
+      press: antiSeize.rawId,
       active: seizeActive,
     }));
 
   const danger = stop
     ? `<div class="section"><h2>${L.maintenance}</h2></div>
        <button class="danger" data-confirm="${escapeHtml(L.emergency_confirm)}"
-               data-press="${escapeHtml(stop.name)}">
+               data-press="${escapeHtml(stop.rawId)}">
          <strong>${L.emergency}</strong><span>${L.emergency_hint}</span>
        </button>`
     : "";
@@ -457,7 +507,7 @@ const DIAGNOSTICS = [
 function settingsView() {
   const timers = TIMERS.map((name) => byName("number", name))
     .filter(Boolean)
-    .map(({ name, entity }) => {
+    .map(({ rawId, name, entity }) => {
       const step = numberOf(entity, "step") || 1;
       return `
       <div class="mode">
@@ -466,7 +516,7 @@ function settingsView() {
           <div class="zone-state">${escapeHtml(L.hints[entity.name] || "")}</div>
         </div>
         <span class="numeric">
-          <input type="number" data-number="${escapeHtml(name)}" value="${numberOf(entity)}"
+          <input type="number" data-number="${escapeHtml(rawId)}" value="${numberOf(entity)}"
                  min="${numberOf(entity, "min_value")}" max="${numberOf(entity, "max_value") || 120}"
                  step="${step}"
                  aria-label="${escapeHtml(entity.name)}">
@@ -478,9 +528,9 @@ function settingsView() {
 
   const protections = PROTECTIONS.map((name) => byName("switch", name))
     .filter(Boolean)
-    .map(({ name, entity }) =>
+    .map(({ rawId, name, entity }) =>
       modeRow(name, L.hints[name] || "", {
-        toggle: name,
+        toggle: rawId,
         on: isOn(entity),
       })
     )
@@ -506,7 +556,7 @@ function settingsView() {
            <div class="zone-name">${L.wifi_change}</div>
            <div class="zone-state">${L.wifi_change_hint}</div>
          </div>
-         <button class="run" data-press="${escapeHtml(wifi.name)}"
+         <button class="run" data-press="${escapeHtml(wifi.rawId)}"
                  data-confirm="${escapeHtml(L.wifi_change_confirm)}">▶</button>
        </div>`
     : "";
@@ -526,7 +576,7 @@ function settingsView() {
       <p class="note" id="upload-status"></p>
       ${
         restart
-          ? `<button class="run wide" data-press="${escapeHtml(restart.name)}"
+          ? `<button class="run wide" data-press="${escapeHtml(restart.rawId)}"
                      data-confirm="${escapeHtml(L.restart_confirm)}">${L.restart}</button>`
           : ""
       }
@@ -585,19 +635,19 @@ function wire(root) {
   root.querySelectorAll("button[data-switch]").forEach((button) => {
     button.addEventListener("click", () => {
       hold(button);
-      command("switch", button.dataset.switch, "toggle");
+      command(button.dataset.switch, "toggle");
     });
   });
   root.querySelectorAll("button[data-press]").forEach((button) => {
     button.addEventListener("click", () => {
       if (button.dataset.confirm && !window.confirm(button.dataset.confirm)) return;
       hold(button);
-      command("button", button.dataset.press, "press");
+      command(button.dataset.press, "press");
     });
   });
   root.querySelectorAll("input[data-number]").forEach((input) => {
     input.addEventListener("change", () => {
-      command("number", input.dataset.number, "set", `?value=${encodeURIComponent(input.value)}`);
+      command(input.dataset.number, "set", `?value=${encodeURIComponent(input.value)}`);
     });
   });
   const firmware = root.querySelector("#firmware");
@@ -699,9 +749,12 @@ function setupView(config) {
 
   const select = document.getElementById("ssid");
   const manual = document.getElementById("manual");
-  select.addEventListener("change", () => {
+  const syncManual = () => {
     manual.hidden = select.value !== "";
-  });
+  };
+  // An empty scan leaves "Other network" selected, which needs the field open.
+  syncManual();
+  select.addEventListener("change", syncManual);
 
   document.getElementById("wifi").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -709,15 +762,17 @@ function setupView(config) {
     const ssid = form.get("ssid") || form.get("manual") || "";
     const status = document.getElementById("status");
     status.textContent = L.setup_saving;
+    const done = `${L.setup_done}<br><span class="muted">${L.setup_done_hint}</span>`;
     try {
-      await fetch(
+      // A POST without a body is rejected with 411, so send an empty one.
+      const response = await fetch(
         `/wifisave?ssid=${encodeURIComponent(ssid)}&psk=${encodeURIComponent(form.get("psk") || "")}`,
-        { method: "POST" }
+        { method: "POST", body: "" }
       );
-      status.innerHTML = `${L.setup_done}<br><span class="muted">${L.setup_done_hint}</span>`;
+      status.innerHTML = response.ok ? done : L.setup_failed;
     } catch (_) {
-      // The board often drops the connection while saving, which is success.
-      status.innerHTML = `${L.setup_done}<br><span class="muted">${L.setup_done_hint}</span>`;
+      // The board drops the connection as it restarts, which means it saved.
+      status.innerHTML = done;
     }
   });
 }

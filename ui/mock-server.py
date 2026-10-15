@@ -361,6 +361,11 @@ class Handler(BaseHTTPRequestHandler):
             while True:
                 BOARD.tick()
                 for state in BOARD.states():
+                    # The board sends each entity in full once, then only
+                    # id/value/state. Whatever needs the name or the limits has
+                    # to keep what it saw in that first frame.
+                    if ticks:
+                        state = {k: v for k, v in state.items() if k in ("id", "value", "state")}
                     self.wfile.write(f"event: state\ndata: {json.dumps(state)}\n\n".encode())
                 # Log lines carry ANSI colours on the real board, so they do here.
                 for line in BOARD.log_lines(ticks):

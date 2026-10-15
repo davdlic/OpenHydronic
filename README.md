@@ -509,6 +509,12 @@ setup wizard: it scans, you pick your network, it saves and restarts. No hidden 
 credentials and restarts the board into that same wizard. Until you finish it the board stays in
 access point mode, which is the price of not having a reset button.
 
+**Credentials.** The interface is behind HTTP basic auth, with the user and password taken from
+`secrets.yaml` at build time. Change them whenever you like and push the new build over the air:
+editing `web_username` / `web_password` and running `esphome run openhydronic-8ch.yaml` takes
+seconds and needs no cable. Do change them before the board controls a real installation: this page
+can open every valve and start the boiler.
+
 > [!NOTE]
 > If the interface ever fails to load, the ESPHome captive portal still answers on any address the
 > page does not serve, such as `/wifi`, and it accepts a firmware upload. There is always a way back.
