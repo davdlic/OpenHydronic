@@ -30,14 +30,17 @@ jobs:
       - name: Validate configuration
         run: esphome config openhydronic-8ch.yaml
 
-      - name: Cache PlatformIO
+      # Only the toolchain is cached. The project's .esphome build directory
+      # holds absolute paths from the runner that produced it, and restoring it
+      # onto a runner with a different Python breaks the CMake generation.
+      - name: Cache the ESP-IDF toolchain
         uses: actions/cache@v4
         with:
           path: |
             ~/.platformio
-            .esphome
-          key: pio-${{ hashFiles('openhydronic-8ch.yaml') }}
-          restore-keys: pio-
+            ~/.cache/esphome
+          key: esphome-toolchain-${{ runner.os }}
+          restore-keys: esphome-toolchain-
 
       - name: Compile firmware
         run: esphome compile openhydronic-8ch.yaml

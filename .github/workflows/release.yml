@@ -1,0 +1,100 @@
+# OpenHydronic - Build and publish a GitHub release on every v*.*.* tag
+# Copyright (C) 2026 David Lopes (https://github.com/davdlic)
+# Licensed under the GNU General Public License v3.0
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v1.0.1)'
+        required: true
+
+jobs:
+  release:
+    name: Build and attach artifacts
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache ESPHome toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio
+            ~/.cache/esphome
+          key: ${{ runner.os }}-esphome-toolchain
+          restore-keys: |
+            ${{ runner.os }}-esphome-toolchain
+
+      - name: Install ESPHome
+        run: |
+          python -m pip install --upgrade pip
+          pip install "esphome>=2025.5.0"
+
+      - name: Create release secrets
+        run: |
+          set -euo pipefail
+          # The published binary carries no real credentials: Wi-Fi is left
+          # unset on purpose so the board boots into its own setup wizard.
+          cp secrets.yaml.example secrets.yaml
+          sed -i "s|REPLACE_WITH_A_32_BYTE_BASE64_KEY=|$(head -c 32 /dev/urandom | base64)|" secrets.yaml
+
+      - name: Build firmware
+        run: esphome compile openhydronic-8ch.yaml
+
+      - name: Stage release artifacts
+        id: stage
+        run: |
+          set -euo pipefail
+          BUILD_DIR=.esphome/build/openhydronic/build
+          OUT=release
+          mkdir -p "$OUT"
+
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          cp "$BUILD_DIR/firmware.factory.bin" "$OUT/openhydronic-${TAG}-factory.bin"
+          cp "$BUILD_DIR/firmware.ota.bin"     "$OUT/openhydronic-${TAG}-ota.bin"
+
+          ( cd "$OUT" && sha256sum * > "openhydronic-${TAG}-SHA256SUMS.txt" )
+
+          echo "Artifacts:"
+          ls -lh "$OUT"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.stage.outputs.tag }}
+          name: OpenHydronic ${{ steps.stage.outputs.tag }}
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+          body: |
+            Flash `openhydronic-${{ steps.stage.outputs.tag }}-factory.bin` over serial from
+            [ESPHome Web](https://web.esphome.io): the factory image carries the bootloader and
+            the partition table, so every update after it can go over the air. The `-ota.bin`
+            is for those later updates, through the board's own page or `esphome upload`.
+
+            The published binary has **no network configured**, so the board comes up as
+            `OpenHydronic-AP` and its setup wizard asks for yours.
+
+            > The published build also carries the placeholder OTA and web passwords from
+            > `secrets.yaml.example`. Before a board controls a real installation, put your own
+            > in `secrets.yaml` and build it yourself — it takes one command and the update
+            > goes over the air.
+          files: |
+            release/*
