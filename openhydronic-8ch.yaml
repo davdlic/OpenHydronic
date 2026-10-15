@@ -59,7 +59,7 @@ substitutions:
   default_master_purge_delay: "2"    # min - residual heat purge
   default_master_min_off: "5"        # min - boiler anti-short-cycle
   default_min_run_time: "10"         # min - minimum ON per relay
-  default_min_off_time: "10"         # min - minimum OFF per relay
+  default_min_off_time: "5"          # min - minimum OFF per relay
   default_air_purge_time: "30"       # min - manual air purge
 
   # ---- Anti-seize routine --------------------------------------------------
@@ -79,7 +79,7 @@ esphome:
   name_add_mac_suffix: true
   project:
     name: "OpenHydronic.Firmware"
-    version: "1.0.0"
+    version: "1.1.0"
   on_boot:
     # Priority 600: safe state before any hardware comes up.
     - priority: 600
@@ -562,13 +562,37 @@ interval:
             else                      desired[ch] = id(zone_req)[ch];
           }
 
-          // -- 2. Heat demand; the bypass is not a consumer -------------------
-          bool demand = false;
+          // -- 2. What the minimum cycle lets through right now ---------------
+          // A request the guard still holds back is not demand: the pump must
+          // never run against valves that cannot open yet.
+          const uint32_t run_ms = (uint32_t)(id(min_run_time).state * 60000.0f);
+          const uint32_t off_ms = (uint32_t)(id(min_off_time).state * 60000.0f);
+          const bool force = (ovr != 0) || !id(cycle_guard).state;
+
+          bool allowed[9] = {false};
           for (int ch = 1; ch <= 8; ch++) {
-            if (desired[ch] && ch != BYPASS_CH) { demand = true; break; }
+            if (ch > ZONES) continue;
+            if (local_master && ch == MASTER_CH) continue;
+
+            const bool cur = R[ch]->state;
+            if (force || desired[ch] == cur) { allowed[ch] = desired[ch]; continue; }
+
+            const uint32_t need  = desired[ch] ? off_ms : run_ms;
+            const uint32_t since = desired[ch] ? (now - id(zone_last_off)[ch])
+                                               : (now - id(zone_last_on)[ch]);
+            allowed[ch] = (since >= need) ? desired[ch] : cur;   // locked: hold
           }
 
-          // -- 3. Master state machine ----------------------------------------
+          // -- 3. Heat demand; the bypass is not a consumer -------------------
+          // Both conditions matter: the zone must want heat and be open. A zone
+          // held closed by the guard must not start the pump; one held open
+          // while closing must not keep the heat coming.
+          bool demand = false;
+          for (int ch = 1; ch <= 8; ch++) {
+            if (desired[ch] && allowed[ch] && ch != BYPASS_CH) { demand = true; break; }
+          }
+
+          // -- 4. Master state machine ----------------------------------------
           //  demand -> [start delay] -> ON -> no demand -> [purge] -> OFF
           const uint32_t start_ms = (uint32_t)(id(master_start_delay).state * 60000.0f);
           const uint32_t purge_ms = (uint32_t)(id(master_purge_delay).state * 60000.0f);
@@ -598,44 +622,34 @@ interval:
           if (id(master_state) && !m) id(master_last_off) = now;
           id(master_state) = m;
 
-          // -- 4. Flow protection: open the bypass when the pump would run
-          //       against a closed circuit (dead head).
+          // -- 5. Flow protection: open the bypass when the pump would run
+          //       against a closed circuit (dead head). Safety outranks wear,
+          //       so this opening ignores the minimum cycle.
           if (BYPASS_CH >= 1 && BYPASS_CH <= 8 && id(bypass_enable).state) {
             if (m || id(demand_since) != 0) {
               bool any_open = false;
               for (int ch = 1; ch <= 8; ch++) {
                 if (ch == BYPASS_CH) continue;
                 if (local_master && ch == MASTER_CH) continue;
-                if (R[ch]->state) { any_open = true; break; }
+                if (allowed[ch]) { any_open = true; break; }
               }
-              if (!any_open) desired[BYPASS_CH] = true;
+              if (!any_open) allowed[BYPASS_CH] = true;
             }
           }
 
-          // -- 5. Apply to the relays, honouring the minimum cycle -------------
-          const uint32_t run_ms = (uint32_t)(id(min_run_time).state * 60000.0f);
-          const uint32_t off_ms = (uint32_t)(id(min_off_time).state * 60000.0f);
-          const bool force = (ovr != 0) || !id(cycle_guard).state;
-
+          // -- 6. Apply to the relays ------------------------------------------
           for (int ch = 1; ch <= 8; ch++) {
             if (ch > ZONES) continue;
             if (local_master && ch == MASTER_CH) continue;
 
             const bool cur = R[ch]->state;
-            if (desired[ch] == cur) continue;
+            if (allowed[ch] == cur) continue;
 
-            if (!force) {
-              const uint32_t need  = desired[ch] ? off_ms : run_ms;
-              const uint32_t since = desired[ch] ? (now - id(zone_last_off)[ch])
-                                                 : (now - id(zone_last_on)[ch]);
-              if (since < need) continue;   // still locked, retry next tick
-            }
-
-            if (desired[ch]) { R[ch]->turn_on();  id(zone_last_on)[ch]  = now; }
+            if (allowed[ch]) { R[ch]->turn_on();  id(zone_last_on)[ch]  = now; }
             else             { R[ch]->turn_off(); id(zone_last_off)[ch] = now; }
           }
 
-          // -- 6. Physical master relay, local master mode only ----------------
+          // -- 7. Physical master relay, local master mode only ----------------
           if (local_master) {
             if (R[MASTER_CH]->state != m) {
               if (m) R[MASTER_CH]->turn_on(); else R[MASTER_CH]->turn_off();

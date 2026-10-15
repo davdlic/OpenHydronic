@@ -66,7 +66,7 @@ class Board:
             "Heat Purge Delay": [2.0, 0, 15, 0.5],
             "Master Min Off Time": [5.0, 0, 30, 1],
             "Zone Min Run Time": [10.0, 0, 60, 1],
-            "Zone Min Off Time": [10.0, 0, 60, 1],
+            "Zone Min Off Time": [5.0, 0, 60, 1],
             "Air Purge Duration": [30.0, 1, 120, 1],
         }
         self.switches = {

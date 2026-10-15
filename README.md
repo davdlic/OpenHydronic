@@ -275,7 +275,7 @@ zone_8_hidden: "true"
                         ┌───────────────────────────────────────────┐
                         │                                           │
                         ▼                                           │
-                 ┌────────────┐     a zone calls for heat     ┌──────────────┐
+                 ┌────────────┐      a zone opens for heat    ┌──────────────┐
                  │   IDLE     │ ───────────────────────────►  │  START DELAY │
                  │ master OFF │                               │   (3 min)    │
                  └────────────┘  ◄──────────────────────────  └──────┬───────┘
@@ -297,6 +297,12 @@ Overrides applied at the end of every 1 Hz pass, in order:
 | `Summer Mode` on | Master forced off, valves still work |
 | Anti-seize with `Anti-Seize Runs Pump` off | Master forced off |
 | `Master Min Off Time` not met | Start postponed (boiler anti-short-cycle) |
+
+A zone only counts as demand while it is **both calling for heat and open**. A request the cycle
+guard is still holding back never starts the pump, so it can never run against a closed circuit;
+and a valve kept open by `Zone Min Run Time` after its room is satisfied does not keep the heat
+coming. The start delay therefore counts from the moment the valve opens, which is what makes it
+match the actuator's travel time.
 
 ---
 
@@ -396,7 +402,7 @@ logic below.
 | `default_master_purge_delay` | `"2"` min | Residual heat purge after the last zone closes. |
 | `default_master_min_off` | `"5"` min | Boiler anti-short-cycle. |
 | `default_min_run_time` | `"10"` min | Minimum ON time per relay. |
-| `default_min_off_time` | `"10"` min | Minimum OFF time per relay. |
+| `default_min_off_time` | `"5"` min | Minimum OFF time per relay. |
 | `default_air_purge_time` | `"30"` min | Manual air purge duration. |
 
 ### Anti-seize
@@ -560,7 +566,7 @@ Prefixed with `${friendly_name}` in Home Assistant.
 | `Heat Purge Delay` | `number` (min) | 2 |
 | `Master Min Off Time` | `number` (min) | 5 |
 | `Zone Min Run Time` | `number` (min) | 10 |
-| `Zone Min Off Time` | `number` (min) | 10 |
+| `Zone Min Off Time` | `number` (min) | 5 |
 | `Air Purge Duration` | `number` (min) | 30 |
 
 ### State

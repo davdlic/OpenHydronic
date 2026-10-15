@@ -4,7 +4,7 @@ All notable changes to this firmware are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.1.0] - 2026-10-15
 
 ### Added
 
@@ -18,10 +18,22 @@ All notable changes to this firmware are documented here. The format follows
 - `Zone N Lock` sensors reporting the seconds left on the minimum cycle, so a
   request that looks ignored can be explained at a glance.
 
+### Fixed
+
+- The circulator could run against a fully closed circuit. A zone request the
+  cycle guard was still holding back counted as heat demand, so the pump
+  started while every valve stayed shut, for as long as the minimum OFF time.
+  Demand now counts a zone only while it is both calling for heat and open.
+
 ### Changed
 
 - The stock ESPHome dashboard is no longer served (`js_url: ""`), and `local`
   was dropped with it. The firmware got smaller despite gaining an interface.
+- `Zone Min Off Time` defaults to 5 min instead of 10. It only has to cover the
+  actuator closing, which takes 3 to 4 minutes; the boiler is protected
+  separately by `Master Min Off Time`.
+- The master start delay now counts from the valve opening rather than from the
+  request, which is what makes it match the actuator's travel time.
 
 ### Documentation
 
@@ -53,4 +65,5 @@ First public release.
 - Standalone web server on port 80, recovery access point, OTA updates.
 - Runtime timers exposed as number entities, no reflash needed.
 
+[1.1.0]: https://github.com/davdlic/OpenHydronic/releases/tag/v1.1.0
 [1.0.0]: https://github.com/davdlic/OpenHydronic/releases/tag/v1.0.0
