@@ -4,6 +4,18 @@ All notable changes to this firmware are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/).
 
+## [1.1.1] - 2026-10-15
+
+### Fixed
+
+- The page had no favicon, no title and, worse, no viewport: ESPHome builds
+  the head and ships none of them, so a phone rendered the interface at
+  desktop width. The interface now fills the head itself, with the brand mark
+  as an inline SVG icon.
+- `ui/mock-server.py` served a head of its own that included the viewport,
+  which is why none of this showed up in development. It now serves exactly
+  what ESPHome generates.
+
 ## [1.1.0] - 2026-10-15
 
 ### Added
@@ -65,5 +77,6 @@ First public release.
 - Standalone web server on port 80, recovery access point, OTA updates.
 - Runtime timers exposed as number entities, no reflash needed.
 
+[1.1.1]: https://github.com/davdlic/OpenHydronic/releases/tag/v1.1.1
 [1.1.0]: https://github.com/davdlic/OpenHydronic/releases/tag/v1.1.0
 [1.0.0]: https://github.com/davdlic/OpenHydronic/releases/tag/v1.0.0

@@ -173,14 +173,15 @@ const VALVE_SVG = `<svg viewBox="0 0 24 24" aria-hidden="true">
   <circle class="core" cx="12" cy="12" r="5"/>
 </svg>`;
 
-const BRAND_SVG = `<svg viewBox="0 0 24 24" aria-hidden="true">
+const BRAND_MARK = `
   <g fill="none" stroke="#ff9800" stroke-width="2.4" stroke-linecap="round">
     <path d="M7 14c0-2 1.6-2 1.6-4S7 6 7 4"/>
     <path d="M12 14c0-2 1.6-2 1.6-4S12 6 12 4"/>
     <path d="M17 14c0-2 1.6-2 1.6-4S17 6 17 4"/>
   </g>
-  <rect x="4" y="17" width="16" height="3" rx="1.5" fill="#e55100"/>
-</svg>`;
+  <rect x="4" y="17" width="16" height="3" rx="1.5" fill="#e55100"/>`;
+
+const BRAND_SVG = `<svg viewBox="0 0 24 24" aria-hidden="true">${BRAND_MARK}</svg>`;
 
 /** Live entity states, keyed by the raw ESPHome id. */
 const entities = new Map();
@@ -349,7 +350,6 @@ function zoneStateText(zone) {
 // View
 // ---------------------------------------------------------------------------
 function shell() {
-  document.title = "OpenHydronic";
   document.body.innerHTML = `
     <div class="offline">${L.offline}</div>
     <header class="topbar">
@@ -709,7 +709,6 @@ async function inAccessPointMode() {
 
 function setupView(config) {
   const networks = [...config.aps].sort((a, b) => b.rssi - a.rssi);
-  document.title = "OpenHydronic";
   document.body.innerHTML = `
     <header class="topbar">
       <div class="topbar-inner">
@@ -778,8 +777,41 @@ function setupView(config) {
 }
 
 // ---------------------------------------------------------------------------
+// Page head
+//
+// ESPHome serves a head with no title, no viewport and a blank favicon
+// (`<link rel=icon href=data:>`). Without the viewport a phone renders the
+// page at desktop width, so this runs before anything else.
+// ---------------------------------------------------------------------------
+function meta(name, content) {
+  let tag = document.querySelector(`meta[name="${name}"]`);
+  if (!tag) {
+    tag = document.createElement("meta");
+    tag.name = name;
+    document.head.appendChild(tag);
+  }
+  tag.content = content;
+}
+
+function head() {
+  document.title = "OpenHydronic";
+  meta("viewport", "width=device-width,initial-scale=1");
+  meta("theme-color", "#0f1020");
+
+  // Inline SVG: the tab icon costs no request and no flash beyond this string.
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">${BRAND_MARK}</svg>`;
+  const link = document.querySelector("link[rel~=icon]") || document.createElement("link");
+  link.rel = "icon";
+  link.type = "image/svg+xml";
+  link.href = `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  document.head.appendChild(link);
+}
+
+// ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------
+head();
+
 inAccessPointMode().then((config) => {
   if (config) {
     setupView(config);

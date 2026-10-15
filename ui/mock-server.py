@@ -38,10 +38,10 @@ ANTI_SEIZE_TIME = 20
 
 AP_MODE = "--ap" in sys.argv
 
-INDEX = """<!DOCTYPE html><html><head><meta charset=UTF-8>
-<meta name=viewport content="width=device-width,initial-scale=1">
-<link rel=icon href=data:><link rel=stylesheet href=/0.css></head>
-<body><script type=module src=/0.js></script><esp-app></esp-app></body></html>"""
+# Byte for byte what ESPHome's build_index_html produces for this config: no
+# title, no viewport, blank favicon. The interface fills those in itself, and
+# the mock must not paper over it.
+INDEX = """<!DOCTYPE html><html><head><meta charset=UTF-8><link rel=icon href=data:><link rel=stylesheet href=/0.css></head><body><script type=module src=/0.js></script><esp-app></esp-app></body></html>"""
 
 
 class Board:
