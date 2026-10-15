@@ -29,6 +29,11 @@ All notable changes to this firmware are documented here. The format follows
   time since the last change, not a fixed lockout.
 - The captive portal is documented as the fallback it now is: the interface
   handles setup at `/`, and `/wifi` is what answers if it ever fails to load.
+- Hardware section corrected: the reference board has 5 V relay coils and takes
+  7 to 30 V, not the 12 V the table claimed. Boards with onboard USB are now
+  recommended, with the serial route documented for the ones without.
+- Commissioning explains how to flash a board that has no USB, including the
+  three mistakes that corrupt a write or stop the adapter enumerating.
 
 ## [1.0.0] - 2026-09-15
 

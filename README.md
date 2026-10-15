@@ -74,14 +74,24 @@ presets and the sensor watchdog live in the companion integration,
 ### Control board
 
 A commodity **ESP32 Relay X8** board (ESP32-WROOM-32 plus 8 relays), sold as *"ESP32 8 Channel
-Relay Module DC 12V"*.
+Relay Module"*. The reference unit for this project carries an ESP32-WROOM-32E and SRD-05VDC-SL-C
+relays behind an LM2596 step-down converter.
 
 | Item | Specification | Notes |
 |---|---|---|
 | MCU | ESP32-WROOM-32, 4 MB flash | 2.4 GHz Wi-Fi |
-| Relays | 8 x SPDT, 12 V coil | Contacts typically 10 A / 250 VAC |
-| Supply | 12 V DC, 1 A or more | All relays energised is about 700 mA |
+| Relays | 8 x SPDT, 5 V coil | Contacts typically 10 A / 250 VAC |
+| Supply | 7-30 V DC on the screw terminal, or 5 V direct | About 570 mA at 5 V with every relay energised |
 | Isolation | Optocoupled drivers | Confirm on your actual board |
+
+> [!TIP]
+> **Buy the variant with USB on board if you can.** The first flash of an ESP32 is always over
+> serial, and a board with an onboard USB-serial chip needs nothing but a cable: you flash it from
+> the browser in two minutes, and every update after that goes over the air.
+>
+> Boards without USB work exactly the same once programmed, but that first flash needs a 3.3 V
+> USB-TTL adapter and the wiring in [Commissioning](#commissioning). It is the single most
+> frustrating part of building this, and a couple of euros avoids it.
 
 ### Bill of materials
 
@@ -89,8 +99,8 @@ Typical installation, 7 zones plus boiler:
 
 | Qty | Component |
 |---|---|
-| 1 | ESP32 Relay X8 board |
-| 1 | 12 V DC 1 A DIN-rail power supply |
+| 1 | ESP32 Relay X8 board, preferably the variant with onboard USB |
+| 1 | DIN-rail power supply, 12 V DC 1 A (anything from 7 to 30 V works) |
 | 7 | 230 V thermal actuators, **NC (normally closed)**, for the manifold |
 | 1 | Two-core cable for the boiler room-stat contact |
 | 1 | 2 A breaker plus a DIN-rail enclosure |
@@ -676,9 +686,33 @@ Save it as `openhydronic-16ch.yaml`. The safety engine needs no other change.
 
 > Do the polarity test with the board out of the enclosure and no 230 V connected.
 
+### Flashing a board without onboard USB
+
+Skip this if your board has USB: plug the cable in, open [ESPHome Web](https://web.esphome.io),
+install `firmware.factory.bin`, done. With a 3.3 V USB-TTL adapter instead, three rules matter
+more than anything else, and each of them cost a full evening to learn:
+
+1. **Enumerate the adapter first.** Plug it into the computer with nothing attached to the board
+   and wait for the port to appear. A powered board pushes current back through the data lines and
+   stops the adapter enumerating, which shows up as *"Device Descriptor Request Failed"*.
+2. **Never power the ESP32 from the adapter's 3.3 V pin.** That regulator supplies around 50 mA,
+   which is enough to talk but not enough to write a megabyte reliably. The write reports success
+   and the image is corrupt. Use the adapter's **5 V** pin into the board's `5V`, or the board's
+   own supply.
+3. **One power source at a time.** The adapter's VCC and the screw terminal must never be
+   connected together.
+
+Wiring is `GND` to `GND`, adapter `TX` to board `RX`, adapter `RX` to board `TX`. Hold `IO0` low
+while the board boots to enter download mode, either with the button or a jumper to `GND`.
+
+> [!IMPORTANT]
+> Always write `firmware.factory.bin`, never `firmware.ota.bin`, over serial. The factory image
+> carries the bootloader and the partition table; an application image alone leaves the board
+> booting whatever was there before, which looks exactly like a flash that silently did nothing.
+
 ### Relay polarity, on the bench
 
-1. Power only the 12 V DC. Connect nothing to the contacts.
+1. Power the board from its own supply. Connect nothing to the contacts.
 2. Flash with the defaults (`relay_inverted: "false"`).
 3. In the web UI, toggle `Zone 1` and watch relay 1's LED and listen for the click.
    - Relay actuates with the switch **on** → active-high → `relay_inverted: "false"`
