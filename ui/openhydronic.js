@@ -46,15 +46,18 @@ const LABELS = {
     running: "Running",
     // First run
     setup_title: "Connect the board to your network",
-    setup_lead: "Pick your Wi-Fi network. The board restarts and joins it.",
+    setup_lead: "Pick your Wi-Fi network and the board joins it.",
     setup_password: "Password",
     setup_save: "Save and connect",
     setup_saving: "Saving…",
-    setup_done: "Saved. The board is restarting and joining the network.",
-    setup_done_hint: "Rejoin your usual Wi-Fi to carry on.",
+    setup_done: "Saved. The board is connecting to your network.",
+    setup_next: (name) => `Once it is on your network, open http://${name}.local or find it in Home Assistant.`,
+    setup_done_hint: "Rejoin your usual Wi-Fi to carry on. If the board does not show up on your network, OpenHydronic-AP stays up: join it again and re-enter your Wi-Fi password.",
+    setup_pick: "Pick a network, or type its name.",
     setup_scan: "Scanning for networks…",
     setup_manual: "Other network",
-    setup_failed: "The board refused the credentials. Check the password and try again.",
+    setup_failed: "The board did not accept that. Try again.",
+    setup_lost: "No answer from the board, so your Wi-Fi may not have been saved. Make sure your phone is on OpenHydronic-AP and tap Save again. If the board already joined your network it will appear within a minute.",
     // Settings
     timers: "Timers",
     protections: "Protections",
@@ -124,15 +127,18 @@ const LABELS = {
     running: "A decorrer",
     // Primeira utilização
     setup_title: "Ligar a placa à tua rede",
-    setup_lead: "Escolhe a rede Wi-Fi. A placa reinicia e junta-se a ela.",
+    setup_lead: "Escolhe a rede Wi-Fi e a placa junta-se a ela.",
     setup_password: "Password",
     setup_save: "Gravar e ligar",
     setup_saving: "A gravar…",
-    setup_done: "Gravado. A placa está a reiniciar e a entrar na rede.",
-    setup_done_hint: "Volta ao teu Wi-Fi habitual para continuar.",
+    setup_done: "Gravado. A placa está a ligar-se à tua rede.",
+    setup_next: (name) => `Quando estiver na tua rede, abre http://${name}.local ou procura-a no Home Assistant.`,
+    setup_done_hint: "Volta ao teu Wi-Fi habitual para continuar. Se a placa não aparecer na tua rede, a OpenHydronic-AP continua lá: junta-te a ela de novo e volta a escrever a password do Wi-Fi.",
+    setup_pick: "Escolhe uma rede, ou escreve o nome dela.",
     setup_scan: "À procura de redes…",
     setup_manual: "Outra rede",
-    setup_failed: "A placa recusou as credenciais. Confirma a password e tenta de novo.",
+    setup_failed: "A placa não aceitou. Tenta de novo.",
+    setup_lost: "A placa não respondeu, por isso o Wi-Fi pode não ter sido gravado. Confirma que o telemóvel está na rede OpenHydronic-AP e carrega em Gravar de novo. Se a placa já entrou na tua rede, aparece dentro de um minuto.",
     // Definições
     timers: "Temporizadores",
     protections: "Proteções",
@@ -708,7 +714,8 @@ async function inAccessPointMode() {
 }
 
 function setupView(config) {
-  const networks = [...config.aps].sort((a, b) => b.rssi - a.rssi);
+  // The board's list always opens with an empty entry; the stock page skips it too.
+  const networks = config.aps.filter((ap) => ap.ssid).sort((a, b) => b.rssi - a.rssi);
   document.body.innerHTML = `
     <header class="topbar">
       <div class="topbar-inner">
@@ -734,7 +741,8 @@ function setupView(config) {
             </select>
           </label>
           <label class="field" id="manual" hidden>
-            <input name="manual" placeholder="SSID" autocomplete="off">
+            <input name="manual" placeholder="SSID" autocomplete="off" autocapitalize="off"
+                   autocorrect="off" spellcheck="false">
           </label>
           <label class="field">
             <input name="psk" type="password" placeholder="${L.setup_password}"
@@ -755,23 +763,37 @@ function setupView(config) {
   syncManual();
   select.addEventListener("change", syncManual);
 
-  document.getElementById("wifi").addEventListener("submit", async (event) => {
+  const wifi = document.getElementById("wifi");
+  wifi.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const form = new FormData(event.target);
-    const ssid = form.get("ssid") || form.get("manual") || "";
+    const button = wifi.querySelector("button");
+    if (button.disabled) return;
+    const form = new FormData(wifi);
+    const ssid = String(form.get("ssid") || form.get("manual") || "");
     const status = document.getElementById("status");
+    if (!ssid.trim()) {
+      status.textContent = L.setup_pick;
+      return;
+    }
+    button.disabled = true;
     status.textContent = L.setup_saving;
-    const done = `${L.setup_done}<br><span class="muted">${L.setup_done_hint}</span>`;
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), 10000);
     try {
-      // A POST without a body is rejected with 411, so send an empty one.
+      // The captive portal only answers GET here, like its own stock form.
       const response = await fetch(
         `/wifisave?ssid=${encodeURIComponent(ssid)}&psk=${encodeURIComponent(form.get("psk") || "")}`,
-        { method: "POST", body: "" }
+        { cache: "no-store", signal: abort.signal }
       );
-      status.innerHTML = response.ok ? done : L.setup_failed;
+      status.innerHTML = response.ok
+        ? `${L.setup_done}<br>${L.setup_next(escapeHtml(config.name || "openhydronic"))}<br>${L.setup_done_hint}`
+        : L.setup_failed;
     } catch (_) {
-      // The board drops the connection as it restarts, which means it saved.
-      status.innerHTML = done;
+      // No answer is not a save: the request may never have reached the board.
+      status.innerHTML = L.setup_lost;
+    } finally {
+      clearTimeout(timer);
+      button.disabled = false;
     }
   });
 }

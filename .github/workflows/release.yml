@@ -49,8 +49,8 @@ jobs:
       - name: Create release secrets
         run: |
           set -euo pipefail
-          # The published binary carries no real credentials: Wi-Fi is left
-          # unset on purpose so the board boots into its own setup wizard.
+          # The published binary carries the placeholders of the example file,
+          # all public. Only the API key is replaced, and nobody keeps that one.
           cp secrets.yaml.example secrets.yaml
           sed -i "s|REPLACE_WITH_A_32_BYTE_BASE64_KEY=|$(head -c 32 /dev/urandom | base64)|" secrets.yaml
 
@@ -89,12 +89,19 @@ jobs:
             the partition table, so every update after it can go over the air. The `-ota.bin`
             is for those later updates, through the board's own page or `esphome upload`.
 
-            The published binary has **no network configured**, so the board comes up as
-            `OpenHydronic-AP` and its setup wizard asks for yours.
+            The published binary carries the placeholder credentials from `secrets.yaml.example`,
+            all of them public: setup network `OpenHydronic-AP` / `openhydronic`, web login
+            `admin` / `my-web-password`, OTA password `my-ota-password`. No real Wi-Fi matches the
+            placeholder one, so after a minute the board brings up `OpenHydronic-AP` and asks for
+            yours. Join it: the page your phone opens by itself, or `http://192.168.4.1` after the
+            web login, saves your Wi-Fi.
 
-            > The published build also carries the placeholder OTA and web passwords from
-            > `secrets.yaml.example`. Before a board controls a real installation, put your own
-            > in `secrets.yaml` and build it yourself — it takes one command and the update
-            > goes over the air.
+            > Those placeholders are public. Before a board controls a real installation, build
+            > your own with passwords in `secrets.yaml` and flash it over USB; later updates go
+            > over the air.
+            >
+            > A Wi-Fi saved through the setup page is forgotten when the board is updated to a
+            > build with a different configuration, and it returns to `OpenHydronic-AP`. Your own
+            > builds avoid that by carrying your Wi-Fi in `secrets.yaml`.
           files: |
             release/*

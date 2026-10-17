@@ -79,7 +79,7 @@ esphome:
   name_add_mac_suffix: true
   project:
     name: "OpenHydronic.Firmware"
-    version: "1.1.1"
+    version: "1.1.2"
   on_boot:
     # Priority 600: safe state before any hardware comes up.
     - priority: 600

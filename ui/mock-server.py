@@ -289,7 +289,9 @@ class Handler(BaseHTTPRequestHandler):
                     {
                         "mac": "10:06:1C:F5:F8:1C",
                         "name": "openhydronic-f5f81c",
+                        # The board always opens the list with an empty entry.
                         "aps": [
+                            {},
                             {"ssid": "SupremeSmartHouse", "rssi": -48, "lock": 1},
                             {"ssid": "House", "rssi": -71, "lock": 1},
                             {"ssid": "Guest", "rssi": -80, "lock": 0},
@@ -298,14 +300,14 @@ class Handler(BaseHTTPRequestHandler):
                 ).encode(),
                 "application/json",
             )
+        elif path == "/wifisave" and AP_MODE:
+            # GET only, with the credentials in the query, as the stock form sends them.
+            self._send(b"Saved. Connecting...", "text/plain")
         else:
             self.send_error(404)
 
     def do_POST(self) -> None:  # noqa: N802
         parts = [unquote(p) for p in self.path.split("?")[0].strip("/").split("/")]
-        if parts[0] == "wifisave":
-            self._send(b"Saved. Connecting...", "text/plain")
-            return
         if parts[0] == "update":
             length = int(self.headers.get("Content-Length", 0))
             while length > 0:
@@ -320,7 +322,8 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if len(parts) != 3:
-            self.send_error(404)
+            # Nothing matches: ESP-IDF closes the socket without any reply.
+            self.close_connection = True
             return
 
         # Routing is by entity name, exactly as the firmware does it.

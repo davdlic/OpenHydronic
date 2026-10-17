@@ -518,8 +518,12 @@ manifold.
 | **Settings** | The six timers with a line each explaining what they protect, the protection switches, diagnostics, firmware upload, restart, and moving the board to another network |
 | **Logs** | The live ESPHome log, coloured by level |
 
-**First run.** With no network stored the board comes up as `OpenHydronic-AP` and the page opens a
-setup wizard: it scans, you pick your network, it saves and restarts. No hidden address to guess.
+**First run.** With no network the board comes up as `OpenHydronic-AP` after a minute (password
+`openhydronic` on the published release, `ap_password` in your own build). Join it: most phones open
+ESPHome's own setup page by themselves, and the interface's wizard is at `http://192.168.4.1` once
+you log in (`admin` / `my-web-password` on the published release). Either one scans, you pick your
+network and it saves. The stock page ends on a bare "Saved. Connecting..."; if the board does not
+appear on your network, `OpenHydronic-AP` is still there to join again.
 
 **Moving to another network.** Settings → Network → *Move to another network* clears the stored
 credentials and restarts the board into that same wizard. Until you finish it the board stays in
@@ -529,7 +533,10 @@ access point mode, which is the price of not having a reset button.
 `secrets.yaml` at build time. Change them whenever you like and push the new build over the air:
 editing `web_username` / `web_password` and running `esphome run openhydronic-8ch.yaml` takes
 seconds and needs no cable. Do change them before the board controls a real installation: this page
-can open every valve and start the boiler.
+can open every valve and start the boiler. A board flashed from the published release still holds
+the placeholder OTA password, so flash your first build over USB if you change `ota_password`. A
+Wi-Fi saved through the setup page is forgotten when the board is updated to a build with a
+different configuration; carry your Wi-Fi in `secrets.yaml` to avoid that.
 
 > [!NOTE]
 > If the interface ever fails to load, the ESPHome captive portal still answers on any address the
@@ -634,9 +641,9 @@ Manual heating procedure:
 4. Switch the `Zone N` entries you need on. With a local master, switch `Master Local Mode` on too.
 
 > [!TIP]
-> In access point mode the page opens straight into the setup wizard, so there is nothing to find.
-> The ESPHome captive portal stays available as a fallback on any address the interface does not
-> serve, such as `http://192.168.4.1/wifi`, and it accepts a firmware file.
+> In access point mode `http://192.168.4.1` opens the setup wizard once you log in. The ESPHome
+> captive portal stays available as a fallback on any address the interface does not serve, such
+> as `http://192.168.4.1/wifi`, and it accepts a firmware file.
 
 Every hydraulic protection is still active: the web server uses exactly the same request path as
 Home Assistant.

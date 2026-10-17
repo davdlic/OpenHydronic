@@ -4,6 +4,39 @@ All notable changes to this firmware are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/).
 
+## [1.1.2] - 2026-10-17
+
+### Fixed
+
+- The first-run Wi-Fi wizard never saved a network and always said it had. It
+  sent a POST to `/wifisave`, but the captive portal only answers a GET there,
+  the way its own form does. The board closed the connection without an answer
+  and the wizard treated that as success. It now sends a GET, and no answer is
+  reported as such.
+- The wizard offered a network called "undefined" and selected it. The board's
+  network list always opens with an empty entry, which the stock page skips too.
+- A blank network name is refused before anything is sent, a double tap sends
+  one save, and the request gives up after ten seconds.
+- The text no longer says the board restarts (it does not), no longer promises
+  that the setup network "comes back" (it never leaves while the join fails),
+  and names the address to open once the board is on your network.
+- `ui/mock-server.py` accepted a POST on `/wifisave`, answered an empty network
+  list without the leading entry, and replied 404 where the board replies
+  nothing. That is why none of this showed in development. It now behaves like
+  the board.
+
+### Documentation
+
+- The release notes said the published binary has no network configured. It
+  carries the placeholder network from `secrets.yaml.example`, which no real
+  network matches. The notes and the README now say so, give the public setup
+  network, web login and OTA password, and no longer promise that a first build
+  of your own goes over the air.
+- A Wi-Fi saved through the setup page is forgotten when the board is updated to
+  a build with a different configuration. The notes and the README now say so.
+- In access point mode the interface sits behind the web login, and phones
+  usually open ESPHome's own setup page first. The README now says so.
+
 ## [1.1.1] - 2026-10-15
 
 ### Fixed
@@ -77,6 +110,7 @@ First public release.
 - Standalone web server on port 80, recovery access point, OTA updates.
 - Runtime timers exposed as number entities, no reflash needed.
 
+[1.1.2]: https://github.com/davdlic/OpenHydronic/releases/tag/v1.1.2
 [1.1.1]: https://github.com/davdlic/OpenHydronic/releases/tag/v1.1.1
 [1.1.0]: https://github.com/davdlic/OpenHydronic/releases/tag/v1.1.0
 [1.0.0]: https://github.com/davdlic/OpenHydronic/releases/tag/v1.0.0
