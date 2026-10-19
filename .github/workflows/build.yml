@@ -10,8 +10,16 @@ on:
 
 jobs:
   build:
-    name: Validate and compile
+    name: Validate and compile (${{ matrix.target }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: firmware
+            config: openhydronic-8ch.yaml
+          - target: release
+            config: openhydronic-release.yaml
     steps:
       - uses: actions/checkout@v4
 
@@ -19,16 +27,26 @@ jobs:
         with:
           python-version: "3.12"
 
+      # The release pins one version; this job tracks the newest one in range, so
+      # a breaking ESPHome shows up here before it can reach a release.
       - name: Install ESPHome
-        run: pip install "esphome>=2025.5.0"
+        run: pip install "esphome>=2026.9.0,<2027.1"
 
       - name: Create throwaway secrets
         run: |
-          cp secrets.yaml.example secrets.yaml
-          sed -i 's|REPLACE_WITH_A_32_BYTE_BASE64_KEY=|'"$(head -c 32 /dev/urandom | base64)"'|' secrets.yaml
+          if [ "${{ matrix.target }}" = "release" ]; then
+            bash .github/scripts/release-secrets.sh
+          else
+            cp secrets.yaml.example secrets.yaml
+            sed -i 's|REPLACE_WITH_A_32_BYTE_BASE64_KEY=|'"$(head -c 32 /dev/urandom | base64)"'|' secrets.yaml
+          fi
 
       - name: Validate configuration
-        run: esphome config openhydronic-8ch.yaml
+        run: esphome config ${{ matrix.config }}
+
+      - name: Check the release configuration
+        if: matrix.target == 'release'
+        run: bash .github/scripts/check-release.sh
 
       # Only the toolchain is cached. The project's .esphome build directory
       # holds absolute paths from the runner that produced it, and restoring it
@@ -39,8 +57,8 @@ jobs:
           path: |
             ~/.platformio
             ~/.cache/esphome
-          key: esphome-toolchain-${{ runner.os }}
+          key: esphome-toolchain-${{ runner.os }}-${{ matrix.target }}
           restore-keys: esphome-toolchain-
 
       - name: Compile firmware
-        run: esphome compile openhydronic-8ch.yaml
+        run: esphome compile ${{ matrix.config }}

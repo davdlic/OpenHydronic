@@ -10,8 +10,14 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to release (e.g. v1.0.1)'
+        description: 'Tag to release (e.g. v1.2.0)'
         required: true
+
+env:
+  # Exact on purpose: the release is verified against this version. ESPHome 2027.2
+  # drops the plaintext fallback keyless boards are adopted through, so a newer
+  # build must be re-tested against Home Assistant before the pin moves.
+  ESPHOME_VERSION: "2026.9.1"
 
 jobs:
   release:
@@ -25,6 +31,19 @@ jobs:
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
+      - name: Check the tag matches the firmware version
+        id: tag
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          VERSION=$(sed -n '/^  project:/,/^  [a-z_]*:/p' openhydronic-8ch.yaml | sed -n 's/^    version: "\(.*\)"/\1/p')
+          if [ "$VERSION" != "${TAG#v}" ]; then
+            echo "::error::openhydronic-8ch.yaml says $VERSION but the tag is $TAG"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -37,39 +56,41 @@ jobs:
             ~/.cache/pip
             ~/.platformio
             ~/.cache/esphome
-          key: ${{ runner.os }}-esphome-toolchain
+          key: ${{ runner.os }}-esphome-${{ env.ESPHOME_VERSION }}
           restore-keys: |
-            ${{ runner.os }}-esphome-toolchain
+            ${{ runner.os }}-esphome-
 
       - name: Install ESPHome
         run: |
           python -m pip install --upgrade pip
-          pip install "esphome>=2025.5.0"
+          pip install "esphome==${ESPHOME_VERSION}"
 
       - name: Create release secrets
-        run: |
-          set -euo pipefail
-          # The published binary carries the placeholders of the example file,
-          # all public. Only the API key is replaced, and nobody keeps that one.
-          cp secrets.yaml.example secrets.yaml
-          sed -i "s|REPLACE_WITH_A_32_BYTE_BASE64_KEY=|$(head -c 32 /dev/urandom | base64)|" secrets.yaml
+        run: bash .github/scripts/release-secrets.sh
+
+      - name: Check the release configuration
+        run: bash .github/scripts/check-release.sh
 
       - name: Build firmware
-        run: esphome compile openhydronic-8ch.yaml
+        run: esphome compile openhydronic-release.yaml
 
       - name: Stage release artifacts
-        id: stage
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail
           BUILD_DIR=.esphome/build/openhydronic/build
           OUT=release
           mkdir -p "$OUT"
 
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-
           cp "$BUILD_DIR/firmware.factory.bin" "$OUT/openhydronic-${TAG}-factory.bin"
           cp "$BUILD_DIR/firmware.ota.bin"     "$OUT/openhydronic-${TAG}-ota.bin"
+
+          # No placeholder may survive into the binary.
+          if grep -aq 'RELEASE-UNUSED' "$OUT"/*.bin; then
+            echo "::error::a RELEASE-UNUSED placeholder is inside a published binary"
+            exit 1
+          fi
 
           ( cd "$OUT" && sha256sum * > "openhydronic-${TAG}-SHA256SUMS.txt" )
 
@@ -79,29 +100,50 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.stage.outputs.tag }}
-          name: OpenHydronic ${{ steps.stage.outputs.tag }}
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: OpenHydronic ${{ steps.tag.outputs.tag }}
           generate_release_notes: true
           fail_on_unmatched_files: false
           body: |
-            Flash `openhydronic-${{ steps.stage.outputs.tag }}-factory.bin` over serial from
-            [ESPHome Web](https://web.esphome.io): the factory image carries the bootloader and
-            the partition table, so every update after it can go over the air. The `-ota.bin`
-            is for those later updates, through the board's own page or `esphome upload`.
+            ## Install
 
-            The published binary carries the placeholder credentials from `secrets.yaml.example`,
-            all of them public: setup network `OpenHydronic-AP` / `openhydronic`, web login
-            `admin` / `my-web-password`, OTA password `my-ota-password`. No real Wi-Fi matches the
-            placeholder one, so after a minute the board brings up `OpenHydronic-AP` and asks for
-            yours. Join it: the page your phone opens by itself, or `http://192.168.4.1` after the
-            web login, saves your Wi-Fi.
+            Needs **Home Assistant 2026.8 or newer**. Older ones cannot set the board's key
+            themselves and ask you for one that does not exist.
 
-            > Those placeholders are public. Before a board controls a real installation, build
-            > your own with passwords in `secrets.yaml` and flash it over USB; later updates go
-            > over the air.
-            >
-            > A Wi-Fi saved through the setup page is forgotten when the board is updated to a
-            > build with a different configuration, and it returns to `OpenHydronic-AP`. Your own
-            > builds avoid that by carrying your Wi-Fi in `secrets.yaml`.
+            1. Plug the board in and open [ESPHome Web](https://web.esphome.io). Install
+               `openhydronic-${{ steps.tag.outputs.tag }}-factory.bin`.
+            2. Give it your Wi-Fi when ESPHome Web asks. Or join `OpenHydronic-AP` (password
+               `openhydronic`), open `http://192.168.4.1`, log in with `admin` / `admin` and pick
+               your network.
+            3. Install the [OpenHydronic integration](https://github.com/davdlic/OpenHydronic-HA)
+               through HACS (custom repository), and restart Home Assistant.
+            4. In Home Assistant, Settings, Devices & services, add the **ESPHome** card first and
+               press Submit: there is no key to type. Then add **OpenHydronic** and map your zones.
+               Do it right away: until Home Assistant adopts the board, any device on your network
+               can claim it.
+
+            ## What this build contains
+
+            The same file goes on every board, so nothing in it is private.
+
+            | | |
+            |---|---|
+            | Wi-Fi | None. Yours is kept across updates of this build. |
+            | Home Assistant key | None. The first client that connects sets it, normally Home Assistant. |
+            | Web login | `admin` / `admin`, public. It cannot be changed without building your own firmware. |
+            | Setup network | `OpenHydronic-AP` / `openhydronic`, public. It runs only while the board has no network. |
+            | OTA password | `my-ota-password`, public. |
+
+            Before a board controls a real installation, build your own with your passwords in
+            `secrets.yaml` and flash it over USB: see the README. To update this build, upload the
+            `-ota.bin` in the board's Settings.
+
+            If a key is ever lost, the board's Settings has a **Factory Reset**. It forgets the
+            Wi-Fi saved there, the Home Assistant key and every setting, the boiler switch
+            (*Master Local Mode*) included, which goes back to off.
+
+            Coming from a 1.1.x release? The Wi-Fi saved through its setup page is forgotten
+            once, the web login becomes `admin` / `admin`, and Home Assistant asks for the
+            board's key again if it had one.
           files: |
             release/*

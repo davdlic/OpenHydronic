@@ -4,6 +4,55 @@ All notable changes to this firmware are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/).
 
+## [1.2.0] - 2026-10-17
+
+### Added
+
+- A release a stranger can adopt. The published firmware no longer carries an
+  API key: it boots unprovisioned and Home Assistant 2026.8 or newer sets a
+  private one when the board is added, with nothing to type. The old release
+  encrypted with a random key that sat in plain view inside the binary, the
+  same on every board, and that nobody had recorded.
+- `Factory Reset` button, behind a confirmation in Settings, to get a board out
+  of a lost key without a cable. Home Assistant receives it disabled.
+- The release is built from `openhydronic-release.yaml`, which drops the API key
+  and the Wi-Fi network from the firmware configuration. CI refuses to publish
+  if either comes back, if the native OTA goes missing (safe mode needs it), if
+  an entity or action the Home Assistant integration reads by name disappears,
+  if a placeholder reaches the binary, or if the tag differs from the firmware
+  version.
+
+### Changed
+
+- The published binary has no Wi-Fi network compiled in, so the one saved
+  through the setup page survives updates of that build.
+- The release builds with a pinned ESPHome (2026.9.1). ESPHome 2027.2 drops the
+  plaintext fallback that keyless boards are adopted through, so the pin moves
+  only after Home Assistant has been re-tested. The build job tracks the newest
+  version in range, to catch a breaking one early.
+- Web authentication is declared `basic`. ESPHome makes digest the default in
+  2027.1, and uploading through the board's page from the CLI only speaks basic.
+- Requires ESPHome 2026.9.0 or newer.
+
+### Upgrading from a published 1.1.x build
+
+- The Wi-Fi saved through its setup page is forgotten once, because the old
+  binary kept it under a key tied to its compiled configuration. The board comes
+  back as `OpenHydronic-AP`: have it within reach.
+- The web login becomes `admin` / `admin`, as the release notes now say.
+- The old binary carried a compiled API key. Home Assistant asks for the key
+  again if it had one; the new build sets a private one when it is added again.
+
+### Documentation
+
+- The installation section has a quick start for the published firmware, says
+  what that build contains and that all of it is public, and covers moving to
+  your own build. Stale notes about `web_server: local` and the old dashboard
+  are gone.
+- The quick start now includes installing the integration through HACS, names
+  Home Assistant 2026.8 as the floor and what happens below it, and says what a
+  factory reset wipes, the boiler switch included.
+
 ## [1.1.2] - 2026-10-17
 
 ### Fixed
@@ -110,6 +159,7 @@ First public release.
 - Standalone web server on port 80, recovery access point, OTA updates.
 - Runtime timers exposed as number entities, no reflash needed.
 
+[1.2.0]: https://github.com/davdlic/OpenHydronic/releases/tag/v1.2.0
 [1.1.2]: https://github.com/davdlic/OpenHydronic/releases/tag/v1.1.2
 [1.1.1]: https://github.com/davdlic/OpenHydronic/releases/tag/v1.1.1
 [1.1.0]: https://github.com/davdlic/OpenHydronic/releases/tag/v1.1.0

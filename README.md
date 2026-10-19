@@ -9,7 +9,7 @@ Licensed under the GNU General Public License v3.0 — see LICENSE
 [![Build](https://github.com/davdlic/OpenHydronic/actions/workflows/build.yml/badge.svg)](https://github.com/davdlic/OpenHydronic/actions/workflows/build.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform: ESP32](https://img.shields.io/badge/Platform-ESP32-informational.svg)](https://www.espressif.com/en/products/socs/esp32)
-[![ESPHome](https://img.shields.io/badge/ESPHome-2025.5%2B-1abc9c.svg)](https://esphome.io/)
+[![ESPHome](https://img.shields.io/badge/ESPHome-2026.9%2B-1abc9c.svg)](https://esphome.io/)
 [![Latest release](https://img.shields.io/github/v/release/davdlic/OpenHydronic?include_prereleases&sort=semver)](https://github.com/davdlic/OpenHydronic/releases/latest)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
@@ -61,8 +61,8 @@ presets and the sensor watchdog live in the companion integration,
 | Item | Supported |
 |---|---|
 | Board | ESP32-WROOM-32 relay boards, 4 or 8 channels |
-| Framework | ESPHome 2025.5.0 or newer, ESP-IDF |
-| Home Assistant | 2024.10 or newer, via the ESPHome integration |
+| Framework | ESPHome 2026.9.0 or newer, ESP-IDF |
+| Home Assistant | 2026.8 or newer for the published firmware (no key to type); 2024.10 or newer when you build with your own key. Both go through the ESPHome integration |
 | Actuators | 230 V thermal heads, **normally closed** |
 | Boiler interface | Dry room-stat contact (TA) only |
 | Zones above 8 | Use a second board, see [Scaling the channels](#scaling-the-channels) |
@@ -234,7 +234,9 @@ master_channel: "8"      # channel 8 is the master
 zone_8_hidden: "true"    # hide the "Zone 8" entity
 ```
 
-Then switch **`Master Local Mode`** on, from Home Assistant or from the web UI.
+Then switch **`Master Local Mode`** on, from Home Assistant or from the web UI. When
+OpenHydronic-HA adds the board it asks what switches the boiler: answer *The board switches it* and
+it turns that switch on for you. In Mode A the answer is *Another switch in Home Assistant*.
 
 ### Mode C — 6 zones plus master and bypass valve
 
@@ -308,12 +310,55 @@ match the actuator's travel time.
 
 ## Installation
 
-### Requirements
+There are two ways in. The first gets you going; for an installation that controls a real house,
+build your own (second), because the published build's logins are public.
 
-- ESPHome **2025.5.0 or newer** (Home Assistant add-on or CLI)
+### Quick start: the published firmware
+
+Needs **Home Assistant 2026.8 or newer**. Older ones cannot set the board's key themselves and ask
+you for one that does not exist.
+
+1. Download `openhydronic-vX.Y.Z-factory.bin` from the
+   [latest release](https://github.com/davdlic/OpenHydronic/releases/latest).
+2. Plug the board in, open [ESPHome Web](https://web.esphome.io) and install that file. Give it
+   your Wi-Fi when ESPHome Web asks.
+3. Install the [OpenHydronic integration](https://github.com/davdlic/OpenHydronic-HA) through HACS
+   (custom repository), and restart Home Assistant.
+4. In Home Assistant, **Settings → Devices & services**, add the **ESPHome** card first and press
+   Submit. There is no key to type. Then add **OpenHydronic** and map your zones.
+
+Do the last step right away. Until Home Assistant adopts the board, any device on your network can
+claim it.
+
+If ESPHome Web does not offer the Wi-Fi step, join `OpenHydronic-AP` (password `openhydronic`),
+open `http://192.168.4.1`, log in with `admin` / `admin` and pick your network.
+
+Coming from a 1.1.x release? The Wi-Fi saved through its setup page is forgotten once, the web
+login becomes `admin` / `admin`, and Home Assistant asks for the board's key again if it had one.
+
+**What the published build contains.** The same file goes on every board, so nothing in it is
+private:
+
+| | |
+|---|---|
+| Wi-Fi | None. Yours is kept across updates of this build. |
+| Home Assistant key | None. The first client that connects sets it, normally Home Assistant. |
+| Web login | `admin` / `admin`, public. It cannot be changed without building your own firmware. |
+| Setup network | `OpenHydronic-AP` / `openhydronic`, public. It runs only while the board has no network. |
+| OTA password | `my-ota-password`, public. |
+
+> [!WARNING]
+> Those values are public. Before a board controls a real installation, build your own firmware
+> with your passwords, below, and flash it over USB.
+
+### Build it yourself
+
+#### Requirements
+
+- ESPHome **2026.9.0 or newer** (Home Assistant add-on or CLI)
 - A 3.3 V USB-TTL cable if the board has no USB on it
 
-### Create `secrets.yaml`
+#### Create `secrets.yaml`
 
 Copy the template next to `openhydronic-8ch.yaml`, or into `/config/esphome/secrets.yaml`:
 
@@ -340,15 +385,22 @@ web_password: "my-web-password"
 
 `secrets.yaml` is gitignored and must stay that way.
 
-### Flash the board
+#### Flash the board
 
 ```bash
 esphome run openhydronic-8ch.yaml
 ```
 
-The first flash is over USB; everything after that is OTA over Wi-Fi.
+The first flash is over USB; everything after that is OTA over Wi-Fi. Moving a board from the
+published firmware to your own build:
 
-### Add it to Home Assistant
+- Flash over USB if you change `ota_password`: the board still holds the published one.
+- Home Assistant will ask for the `api_encryption_key` of your build. Paste it. A key set by an
+  earlier adoption is replaced by the one compiled in.
+- Your Wi-Fi is compiled in, so it survives every update. A Wi-Fi saved through the setup page
+  does not: it is forgotten when the board is updated to a build with a different configuration.
+
+#### Add it to Home Assistant
 
 The board announces itself over mDNS as `openhydronic-<mac>.local` and shows up under
 **Settings → Devices & Services → Discovered**. Accept it and paste the `api_encryption_key`.
@@ -356,17 +408,11 @@ The board announces itself over mDNS as `openhydronic-<mac>.local` and shows up 
 For zone mapping, thermostats and presets, install
 [OpenHydronic-HA](https://github.com/davdlic/OpenHydronic-HA) through HACS afterwards.
 
-### A note on flash space
+#### A note on flash space
 
-`web_server` with `local: true` embeds the UI assets in flash so the page works with no internet at
-all. If the build runs out of space:
-
-```yaml
-web_server:
-  local: false      # loads assets from esphome.io, browser needs internet
-```
-
-…or define a larger partition table under `esp32: partitions:`.
+The interface is embedded in the firmware, so the page works with no internet at all. The build
+uses about half of its 1.75 MB application slot. If you add components and it runs out, define a larger partition
+table under `esp32: partitions:`.
 
 ---
 
@@ -515,13 +561,13 @@ manifold.
 |---|---|
 | **Zones** | Valve state per zone, the countdown while the minimum cycle holds a request, and a toggle that shows what you asked for rather than what the relay is doing |
 | **System** | Summer mode, air purge with its countdown, anti-seize, and the emergency stop behind a confirmation |
-| **Settings** | The six timers with a line each explaining what they protect, the protection switches, diagnostics, firmware upload, restart, and moving the board to another network |
+| **Settings** | The six timers with a line each explaining what they protect, the protection switches, diagnostics, firmware upload, restart, moving the board to another network, and a factory reset |
 | **Logs** | The live ESPHome log, coloured by level |
 
-**First run.** With no network the board comes up as `OpenHydronic-AP` after a minute (password
+**First run.** With no network the board comes up as `OpenHydronic-AP` within a minute (password
 `openhydronic` on the published release, `ap_password` in your own build). Join it: most phones open
 ESPHome's own setup page by themselves, and the interface's wizard is at `http://192.168.4.1` once
-you log in (`admin` / `my-web-password` on the published release). Either one scans, you pick your
+you log in (`admin` / `admin` on the published release). Either one scans, you pick your
 network and it saves. The stock page ends on a bare "Saved. Connecting..."; if the board does not
 appear on your network, `OpenHydronic-AP` is still there to join again.
 
@@ -575,6 +621,7 @@ Prefixed with `${friendly_name}` in Home Assistant.
 | `Zone Min Run Time` | `number` (min) | 10 |
 | `Zone Min Off Time` | `number` (min) | 5 |
 | `Air Purge Duration` | `number` (min) | 30 |
+| `Factory Reset` | `button` | disabled by default in Home Assistant, on the board's page behind a confirmation. Wipes what the board saved and turns `Master Local Mode` off |
 
 ### State
 
@@ -631,13 +678,14 @@ The firmware is configured never to depend on the server or on the internet:
 | `wifi: reboot_timeout: 0s` | Losing Wi-Fi never reboots the board. |
 | `wifi.ap` plus `ap_timeout: 60s` | After 60 s with no network, **`OpenHydronic-AP`** comes up. |
 | `captive_portal` | Joining the AP opens the configuration page automatically. |
-| `web_server` with `local: true` | Full UI on port 80, with no external CDN. |
+| `web_server` | Full interface on port 80, embedded in the firmware, with no external CDN. |
 
 Manual heating procedure:
 
-1. Join the local network, or `OpenHydronic-AP` if there is none (password in `secrets.yaml`).
+1. Join the local network, or `OpenHydronic-AP` if there is none (`openhydronic` on the published
+   build, `ap_password` in your own).
 2. Open `http://openhydronic-<mac>.local`, or `http://192.168.4.1` in AP mode.
-3. Log in with `web_username` / `web_password`.
+3. Log in with `admin` / `admin` on the published build, or your `web_username` / `web_password`.
 4. Switch the `Zone N` entries you need on. With a local master, switch `Master Local Mode` on too.
 
 > [!TIP]
@@ -765,13 +813,16 @@ switch `Cycle Protection` off. **Restore them before putting the system in servi
 |---|---|---|
 | Board does not start after flashing | `GPIO12` high at boot (active-low board) | Remap `relay_7_pin`, see [Pin map](#pin-map). |
 | A zone switch turns itself back off | Minimum cycle lock | Normal. Check `Zone N Lock` for the minutes left; the request runs by itself when it expires. For bench testing switch `Cycle Protection` off. |
-| Joined `OpenHydronic-AP` but only see a table of entities | The web server owns `/`, so the setup form moves | Open `http://192.168.4.1/wifi`, or any address the dashboard does not serve. |
+| Home Assistant asks for an encryption key | A build with its own key, or Home Assistant lost the one it set | Your own build: paste its `api_encryption_key`. Published firmware: press **Factory Reset** in the board's Settings, or erase it over USB, and add it again. |
+| Home Assistant says the device disabled encryption | The board was reset or reflashed | Press Submit. It sets the key again. |
+| ESPHome asks for an encryption key right after flashing the published build | Home Assistant is older than 2026.8 and cannot set it | Update Home Assistant, or build the firmware with your own key. |
+| The boiler stopped after a factory reset | `Master Local Mode` goes back to off | Switch it on again. |
+| `OpenHydronic-AP` is back after an update | A Wi-Fi saved through the setup page is forgotten when the build's configuration changes | Do the setup again, or compile your Wi-Fi in with `secrets.yaml`. |
 | A zone never opens | Channel reserved for the master, or above `zone_count` | Review `master_channel` and `zone_count`. |
 | The boiler never starts | `Summer Mode` on, or no master configured | Turn `Summer Mode` off; switch `Master Local Mode` on or configure the external entity. |
 | `Master Demand` on but the boiler stays cold | Room-stat wiring | Check the dry contact and polarity in the boiler manual. |
 | Noisy circulator with few zones open | No minimum flow | Set `bypass_channel` or fit a mechanical bypass. |
 | Anti-seize never fires | No time source | See [Running without Home Assistant](#running-without-home-assistant). Use the manual button. |
-| Build fails, out of flash | `web_server: local: true` | Set `local: false` or enlarge the partition. |
 | Never appears in Home Assistant | mDNS blocked between VLANs | Add it by IP under *Add Integration → ESPHome*. |
 
 Live logs:

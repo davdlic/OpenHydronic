@@ -1,0 +1,21 @@
+# OpenHydronic - public release build, compiled by CI only.
+# Copyright (C) 2026 David Lopes (https://github.com/davdlic)
+# Licensed under the GNU General Public License v3.0
+#
+# The published binary is the same for every board, so it must not carry a
+# private value. This file builds openhydronic-8ch.yaml and drops the two that
+# cannot be private:
+#   - the API key: Home Assistant sets a private one when it adopts the board
+#   - the Wi-Fi network: the setup page asks for the real one and keeps it
+# What stays is public by design and documented as such: the setup access point
+# password, the admin web login and the OTA password.
+packages:
+  firmware: !include openhydronic-8ch.yaml
+
+api:
+  encryption:
+    key: !remove
+
+wifi:
+  ssid: !remove
+  password: !remove

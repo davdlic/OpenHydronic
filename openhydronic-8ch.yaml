@@ -4,7 +4,7 @@
 #  Licensed under the GNU General Public License v3.0 - see LICENSE
 #
 #  Target   : ESP32-WROOM-32 relay board, 8 channels
-#  Requires : ESPHome >= 2025.5.0
+#  Requires : ESPHome >= 2026.9.0
 #
 #  The board knows nothing about temperatures or schedules. It takes zone
 #  requests and decides when it is safe to apply them. Thermostats, hysteresis
@@ -79,7 +79,7 @@ esphome:
   name_add_mac_suffix: true
   project:
     name: "OpenHydronic.Firmware"
-    version: "1.1.2"
+    version: "1.2.0"
   on_boot:
     # Priority 600: safe state before any hardware comes up.
     - priority: 600
@@ -185,6 +185,9 @@ web_server:
   css_include: ui/openhydronic.css
   js_include: ui/openhydronic.js
   auth:
+    # Explicit: ESPHome makes digest the default in 2027.1.0, and the CLI
+    # upload through this page only speaks basic.
+    type: basic
     username: !secret web_username
     password: !secret web_password
 
@@ -760,6 +763,16 @@ button:
       - lambda: wifi::global_wifi_component->save_wifi_sta("", "");
       - delay: 2s
       - lambda: App.safe_reboot();
+
+  # Erases everything the board stored: the Home Assistant key, the saved Wi-Fi
+  # and the timers. It is the way back when that key is lost. Home Assistant
+  # gets it disabled, so a stray tap there cannot wipe the controller; the
+  # board's own page keeps it behind a confirmation.
+  - platform: factory_reset
+    name: "Factory Reset"
+    icon: mdi:backup-restore
+    entity_category: config
+    disabled_by_default: true
 
 # =============================================================================
 #  STATE TELEMETRY

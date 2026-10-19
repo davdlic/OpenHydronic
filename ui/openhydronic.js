@@ -71,6 +71,14 @@ const LABELS = {
     restart: "Restart the board",
     restart_confirm: "Restart the board now? Zones close while it reboots.",
     network: "Network",
+    maintenance: "Maintenance",
+    factory_reset: "Factory reset",
+    factory_reset_hint: "Forget the Wi-Fi saved here, the Home Assistant key and every setting",
+    factory_reset_confirm:
+      "Erase what this board saved? It forgets the Wi-Fi set from this page, the key Home " +
+      "Assistant gave it, its timers and Master Local Mode (the boiler switch goes back to off), " +
+      "and comes back as OpenHydronic-AP. Zones close meanwhile. A Wi-Fi or key built into the " +
+      "firmware stays. Continue?",
     wifi_change: "Move to another network",
     wifi_change_hint: "The board restarts as its own access point so you can pick a new one",
     wifi_change_confirm:
@@ -152,6 +160,14 @@ const LABELS = {
     restart: "Reiniciar a placa",
     restart_confirm: "Reiniciar a placa agora? As zonas fecham durante o arranque.",
     network: "Rede",
+    maintenance: "Manutenção",
+    factory_reset: "Repor de fábrica",
+    factory_reset_hint: "Esquece o Wi-Fi gravado aqui, a chave do Home Assistant e todas as definições",
+    factory_reset_confirm:
+      "Apagar o que esta placa guardou? Esquece o Wi-Fi definido nesta página, a chave que o " +
+      "Home Assistant lhe deu, os temporizadores e o Master Local Mode (o interruptor da " +
+      "caldeira volta a desligado), e volta como OpenHydronic-AP. As zonas fecham entretanto. " +
+      "Um Wi-Fi ou chave compilados no firmware ficam. Continuar?",
     wifi_change: "Mudar de rede",
     wifi_change_hint: "A placa reinicia como ponto de acesso para escolheres outra rede",
     wifi_change_confirm:
@@ -553,6 +569,7 @@ function settingsView() {
 
   const restart = byName("button", "Restart");
   const wifi = byName("button", "Wi-Fi Setup");
+  const reset = byName("button", "Factory Reset");
   if (!timers && !protections) return `<div class="placeholder">${L.loading}</div>`;
 
   const network = wifi
@@ -567,10 +584,23 @@ function settingsView() {
        </div>`
     : "";
 
+  const maintenance = reset
+    ? `<div class="section"><h2>${L.maintenance}</h2></div>
+       <div class="mode">
+         <div class="zone-info">
+           <div class="zone-name">${L.factory_reset}</div>
+           <div class="zone-state">${L.factory_reset_hint}</div>
+         </div>
+         <button class="run" data-press="${escapeHtml(reset.rawId)}"
+                 data-confirm="${escapeHtml(L.factory_reset_confirm)}">▶</button>
+       </div>`
+    : "";
+
   return `
     <div class="section"><h2>${L.timers}</h2></div>${timers}
     <div class="section"><h2>${L.protections}</h2></div>${protections}
     ${network}
+    ${maintenance}
     <div class="section"><h2>${L.diagnostics}</h2></div>
     <div class="card">${diagnostics}</div>
     <div class="section"><h2>${L.firmware}</h2></div>

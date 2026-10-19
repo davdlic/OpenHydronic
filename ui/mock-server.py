@@ -204,6 +204,7 @@ class Board:
         out.append({"id": "button/Emergency Stop", "domain": "button", "name": "Emergency Stop", "state": ""})
         out.append({"id": "button/Restart", "domain": "button", "name": "Restart", "state": ""})
         out.append({"id": "button/Wi-Fi Setup", "domain": "button", "name": "Wi-Fi Setup", "state": ""})
+        out.append({"id": "button/Factory Reset", "domain": "button", "name": "Factory Reset", "state": ""})
 
         for name, (value, low, high, step) in self.numbers.items():
             out.append(
