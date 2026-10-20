@@ -9,6 +9,11 @@
 #   - the Wi-Fi network: the setup page asks for the real one and keeps it
 # What stays is public by design and documented as such: the setup access point
 # password, the admin web login and the OTA password.
+# The published build answers to the public admin / admin until its owner sets
+# a password of their own.
+substitutions:
+  password_is_public: "true"
+
 packages:
   firmware: !include openhydronic-8ch.yaml
 

@@ -48,6 +48,11 @@ jobs:
         if: matrix.target == 'release'
         run: bash .github/scripts/check-release.sh
 
+      # A self-build must not claim its password is the public one.
+      - name: Check the self-build does not flag the public password
+        if: matrix.target == 'firmware'
+        run: esphome config ${{ matrix.config }} | grep -q 'return false && id(board_pass)\[0\] == 0'
+
       # Only the toolchain is cached. The project's .esphome build directory
       # holds absolute paths from the runner that produced it, and restoring it
       # onto a runner with a different Python breaks the CMake generation.

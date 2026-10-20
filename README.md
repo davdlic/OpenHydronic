@@ -310,8 +310,8 @@ match the actuator's travel time.
 
 ## Installation
 
-There are two ways in. The first gets you going; for an installation that controls a real house,
-build your own (second), because the published build's logins are public.
+There are two ways in. The first gets you going: set your own password straight away, as below. For
+full control of every credential, build your own (second).
 
 ### Quick start: the published firmware
 
@@ -326,9 +326,14 @@ you for one that does not exist.
    (custom repository), and restart Home Assistant.
 4. In Home Assistant, **Settings → Devices & services**, add the **ESPHome** card first and press
    Submit. There is no key to type. Then add **OpenHydronic** and map your zones.
+5. Set the board's password, 8 to 64 characters: letters, digits, spaces and the symbols of an
+   English keyboard, no accents. Home Assistant raises a repair for it under
+   **Settings → System → Repairs**: open it, type the password and submit.
+   Or open the board's page at `http://openhydronic-<mac>.local` (the name is on its device page in
+   Home Assistant), log in with `admin` / `admin` and use *Settings → Security*.
 
-Do the last step right away. Until Home Assistant adopts the board, any device on your network can
-claim it.
+Do step 4 right away. Until Home Assistant adopts the board, any device on your network can claim
+it.
 
 If ESPHome Web does not offer the Wi-Fi step, join `OpenHydronic-AP` (password `openhydronic`),
 open `http://192.168.4.1`, log in with `admin` / `admin` and pick your network.
@@ -343,13 +348,24 @@ private:
 |---|---|
 | Wi-Fi | None. Yours is kept across updates of this build. |
 | Home Assistant key | None. The first client that connects sets it, normally Home Assistant. |
-| Web login | `admin` / `admin`, public. It cannot be changed without building your own firmware. |
+| Web login | `admin` / `admin`, public until you set a password. The user stays `admin`. |
 | Setup network | `OpenHydronic-AP` / `openhydronic`, public. It runs only while the board has no network. |
-| OTA password | `my-ota-password`, public. |
+| OTA password | `my-ota-password`, public until you set that same password. |
 
 > [!WARNING]
-> Those values are public. Before a board controls a real installation, build your own firmware
-> with your passwords, below, and flash it over USB.
+> Those values are public. **Set a password before the board controls a real installation**:
+> *Settings → Security* on the board's page, or the repair Home Assistant raises for you. One
+> password then protects the page and the firmware updates. The setup network stays public, and it
+> only runs while the board has no Wi-Fi. For control of every credential, build your own firmware,
+> below, and flash it over USB.
+
+What the password does not cover:
+
+- The page is plain HTTP with basic auth. Anyone who can read your local network traffic can read
+  the password, so keep the board off guest and shared networks.
+- Whoever holds the board's Home Assistant key can set a new password without the old one. That is
+  anyone who can call services in your Home Assistant, admin or not, or who holds a token for it.
+- Nothing locks out repeated wrong guesses. Choose a long one.
 
 ### Build it yourself
 
@@ -360,7 +376,8 @@ private:
 
 #### Create `secrets.yaml`
 
-Copy the template next to `openhydronic-8ch.yaml`, or into `/config/esphome/secrets.yaml`:
+Copy the template next to `openhydronic-8ch.yaml`, or into `/config/esphome/secrets.yaml`. Every
+value in it is public, because it sits in this repository: replace all of them with your own.
 
 ```bash
 cp secrets.yaml.example secrets.yaml
@@ -394,7 +411,10 @@ esphome run openhydronic-8ch.yaml
 The first flash is over USB; everything after that is OTA over Wi-Fi. Moving a board from the
 published firmware to your own build:
 
-- Flash over USB if you change `ota_password`: the board still holds the published one.
+- `esphome upload` needs the password the board answers to now. A board from the published release
+  answers to `my-ota-password`, so flash your first build over USB if you change `ota_password`. If
+  you set a board password, put that one in `ota_password` for the upload. A saved board password
+  overrides the compiled web and OTA passwords until a factory reset.
 - Home Assistant will ask for the `api_encryption_key` of your build. Paste it. A key set by an
   earlier adoption is replaced by the one compiled in.
 - Your Wi-Fi is compiled in, so it survives every update. A Wi-Fi saved through the setup page
@@ -561,7 +581,7 @@ manifold.
 |---|---|
 | **Zones** | Valve state per zone, the countdown while the minimum cycle holds a request, and a toggle that shows what you asked for rather than what the relay is doing |
 | **System** | Summer mode, air purge with its countdown, anti-seize, and the emergency stop behind a confirmation |
-| **Settings** | The six timers with a line each explaining what they protect, the protection switches, diagnostics, firmware upload, restart, moving the board to another network, and a factory reset |
+| **Settings** | The six timers with a line each explaining what they protect, the protection switches, diagnostics, the board password, firmware upload, restart, moving the board to another network, and a factory reset |
 | **Logs** | The live ESPHome log, coloured by level |
 
 **First run.** With no network the board comes up as `OpenHydronic-AP` within a minute (password
@@ -575,14 +595,24 @@ appear on your network, `OpenHydronic-AP` is still there to join again.
 credentials and restarts the board into that same wizard. Until you finish it the board stays in
 access point mode, which is the price of not having a reset button.
 
-**Credentials.** The interface is behind HTTP basic auth, with the user and password taken from
-`secrets.yaml` at build time. Change them whenever you like and push the new build over the air:
-editing `web_username` / `web_password` and running `esphome run openhydronic-8ch.yaml` takes
-seconds and needs no cable. Do change them before the board controls a real installation: this page
-can open every valve and start the boiler. A board flashed from the published release still holds
-the placeholder OTA password, so flash your first build over USB if you change `ota_password`. A
-Wi-Fi saved through the setup page is forgotten when the board is updated to a build with a
-different configuration; carry your Wi-Fi in `secrets.yaml` to avoid that.
+**Credentials.** The interface is behind HTTP basic auth, user `web_username` (`admin` on the
+published build). On any build you can set a
+password without rebuilding: *Settings → Security*, or the `Board Password` entity in Home
+Assistant. It is kept across reboots and replaces the web password and the OTA password until a
+factory reset, which brings back the compiled ones (`admin` / `admin` and `my-ota-password` on the
+published build). Set one before the board controls a real installation: this page can open every
+valve and start the boiler.
+
+Once it is set, your own `esphome upload` needs it as `ota_password`. In safe mode, which starts
+only after repeated failed boots, the OTA password is the one compiled in.
+
+To take both from `secrets.yaml` instead, edit `web_username` / `web_password` and run
+`esphome run openhydronic-8ch.yaml`: it takes seconds and needs no cable. On a board with a saved
+password the compiled ones apply only after a Factory Reset, which also forgets the Home Assistant
+key, the saved Wi-Fi and the settings. A board flashed from the
+published release still answers to `my-ota-password`, so flash your first build over USB if you
+change `ota_password`. A Wi-Fi saved through the setup page is forgotten when the board is updated
+to a build with a different configuration; carry your Wi-Fi in `secrets.yaml` to avoid that.
 
 > [!NOTE]
 > If the interface ever fails to load, the ESPHome captive portal still answers on any address the
@@ -621,7 +651,8 @@ Prefixed with `${friendly_name}` in Home Assistant.
 | `Zone Min Run Time` | `number` (min) | 10 |
 | `Zone Min Off Time` | `number` (min) | 5 |
 | `Air Purge Duration` | `number` (min) | 30 |
-| `Factory Reset` | `button` | disabled by default in Home Assistant, on the board's page behind a confirmation. Wipes what the board saved and turns `Master Local Mode` off |
+| `Board Password` | `text` | write-only: sets the password of the page and of the OTA, never shown or published |
+| `Factory Reset` | `button` | disabled by default in Home Assistant, on the board's page behind a confirmation. Wipes what the board saved, turns `Master Local Mode` off and returns the password to the compiled one |
 
 ### State
 
@@ -634,6 +665,7 @@ Prefixed with `${friendly_name}` in Home Assistant.
 | `Anti-Seize Active` | `binary_sensor` | Exercise cycle in progress. |
 | `Air Purge Active` | `binary_sensor` | Air purge in progress. |
 | `Open Zones` | `sensor` | Number of zones physically open. |
+| `Default Password` | `binary_sensor` | On while the published build still answers to the public `admin` / `admin`. |
 | `API Status`, `Uptime`, `Wi-Fi Signal`, `IP Address`, `SSID`, `ESPHome Version` | diagnostic | — |
 
 > In Mode A the integration runs its own master state machine, with the same delays, and switches
@@ -685,7 +717,9 @@ Manual heating procedure:
 1. Join the local network, or `OpenHydronic-AP` if there is none (`openhydronic` on the published
    build, `ap_password` in your own).
 2. Open `http://openhydronic-<mac>.local`, or `http://192.168.4.1` in AP mode.
-3. Log in with `admin` / `admin` on the published build, or your `web_username` / `web_password`.
+3. Log in with the board password and your user name (`admin` on the published build). If you never
+   set a password: `admin` / `admin` on the published build, or your `web_username` /
+   `web_password`.
 4. Switch the `Zone N` entries you need on. With a local master, switch `Master Local Mode` on too.
 
 > [!TIP]
@@ -815,6 +849,7 @@ switch `Cycle Protection` off. **Restore them before putting the system in servi
 | A zone switch turns itself back off | Minimum cycle lock | Normal. Check `Zone N Lock` for the minutes left; the request runs by itself when it expires. For bench testing switch `Cycle Protection` off. |
 | Home Assistant asks for an encryption key | A build with its own key, or Home Assistant lost the one it set | Your own build: paste its `api_encryption_key`. Published firmware: press **Factory Reset** in the board's Settings, or erase it over USB, and add it again. |
 | Home Assistant says the device disabled encryption | The board was reset or reflashed | Press Submit. It sets the key again. |
+| Forgot the board password | Nothing recovers it by design | Set a new one from Home Assistant (the `Board Password` entity, no old password needed), or press **Factory Reset** (enable it in the device page first), or erase over USB. |
 | ESPHome asks for an encryption key right after flashing the published build | Home Assistant is older than 2026.8 and cannot set it | Update Home Assistant, or build the firmware with your own key. |
 | The boiler stopped after a factory reset | `Master Local Mode` goes back to off | Switch it on again. |
 | `OpenHydronic-AP` is back after an update | A Wi-Fi saved through the setup page is forgotten when the build's configuration changes | Do the setup again, or compile your Wi-Fi in with `secrets.yaml`. |

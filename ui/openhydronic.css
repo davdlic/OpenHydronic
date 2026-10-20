@@ -133,6 +133,18 @@ main {
 }
 
 body.disconnected .offline { display: block; }
+
+/* ---------- Public password warning ---------- */
+.warning {
+  background: rgba(239, 68, 68, 0.12);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.45);
+  color: var(--text);
+  padding: 0.7rem 1rem;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.warning[hidden] { display: none; }
 body.disconnected main { opacity: 0.55; pointer-events: none; }
 
 /* ---------- Section heading ---------- */

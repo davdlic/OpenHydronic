@@ -31,7 +31,7 @@ if ! grep -q -- '- platform: esphome' resolved.yaml; then
 fi
 
 # --- the contract the Home Assistant integration reads by name
-for name in "Zone 1" "Zone 2" "Zone 3" "Zone 4" "Zone 5" "Zone 6" "Zone 7" "Zone 8" "Master Local Mode"; do
+for name in "Zone 1" "Zone 2" "Zone 3" "Zone 4" "Zone 5" "Zone 6" "Zone 7" "Zone 8" "Master Local Mode" "Board Password" "Default Password"; do
   if ! grep -q -- "name: $name\$" resolved.yaml; then
     echo "::error::entity '$name' is missing, the integration reads it by name"
     exit 1
@@ -43,4 +43,25 @@ for action in zone_set all_zones_off start_air_purge stop_air_purge start_anti_s
     exit 1
   fi
 done
+# --- the wiring that makes a saved password work, not only its names
+applied=$(grep -c 'id: apply_board_password' resolved.yaml || true)
+if [ "$applied" -lt 3 ]; then
+  echo "::error::the saved password is not applied on boot and on every set (found $applied of 3 places)"
+  exit 1
+fi
+if ! awk '/name: Board Password$/{f=1} f&&/optimistic: false/{ok=1} f&&/^  - platform|^[a-z_]+:/&&!/name: Board Password/{if(f&&seen)exit} {if(f)seen=1} END{exit !ok}' resolved.yaml; then
+  echo "::error::the Board Password entity would publish its value"
+  exit 1
+fi
+# The first restore_value after the global's own id is its own, not a neighbour's.
+if [ "$(awk '/- id: board_pass$/{f=1;next} f&&/restore_value:/{print $2;exit}' resolved.yaml)" != "true" ]; then
+  echo "::error::the saved password would not survive a reboot"
+  exit 1
+fi
+
+# --- the published build must know its password is the public one
+if ! grep -q 'return true && id(board_pass)\[0\] == 0' resolved.yaml; then
+  echo "::error::the release build does not flag its public default password"
+  exit 1
+fi
 echo "Release configuration is clean and keeps the contract."

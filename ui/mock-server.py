@@ -56,6 +56,8 @@ class Board:
         }
         self.master = False
         self.summer = False
+        # Empty means none was set.
+        self.password = ""
         self.demand_since: float | None = None
         self.demand_ended: float | None = None
         self.purge_until: float | None = None
@@ -81,6 +83,10 @@ class Board:
         with self.lock:
             zone = self.zones[channel]
             zone["request"] = not zone["request"]
+
+    def set_password(self, value: str) -> None:
+        with self.lock:
+            self.password = value
 
     def toggle_summer(self) -> None:
         with self.lock:
@@ -186,6 +192,11 @@ class Board:
                 }
             )
 
+        out.append(binary("binary_sensor", "Default Password", self.password == ""))
+        # A mask, never the value.
+        out.append(
+            {"id": "text/Board Password", "domain": "text", "name": "Board Password", "state": "********", "value": ""}
+        )
         out.append(binary("binary_sensor", "Master Demand", self.master))
         out.append(
             binary("binary_sensor", "Heat Demand", self.demand_since is not None)
@@ -339,6 +350,13 @@ class Handler(BaseHTTPRequestHandler):
             elif not BOARD.toggle_switch(name):
                 self.send_error(404)
                 return
+        elif domain == "text":
+            query = parse_qs(urlsplit(self.path).query)
+            value = query.get("value", [""])[0]
+            # Like the board: answer 200, then drop what is not 8 to 64 printable ASCII bytes.
+            raw = value.encode()
+            if name == "Board Password" and 8 <= len(raw) <= 64 and all(0x20 <= b <= 0x7E for b in raw):
+                BOARD.set_password(value)
         elif domain == "number":
             query = parse_qs(urlsplit(self.path).query)
             try:

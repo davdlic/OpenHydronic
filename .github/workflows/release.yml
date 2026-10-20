@@ -121,6 +121,11 @@ jobs:
                press Submit: there is no key to type. Then add **OpenHydronic** and map your zones.
                Do it right away: until Home Assistant adopts the board, any device on your network
                can claim it.
+            5. Set the board's password, 8 to 64 characters: letters, digits, spaces and the
+               symbols of an English keyboard, no accents. Home Assistant raises a repair for it
+               under Settings, System, Repairs. Or open the board's page at
+               `http://openhydronic-<mac>.local`, log in with `admin` / `admin` and use Settings,
+               Security.
 
             ## What this build contains
 
@@ -130,17 +135,25 @@ jobs:
             |---|---|
             | Wi-Fi | None. Yours is kept across updates of this build. |
             | Home Assistant key | None. The first client that connects sets it, normally Home Assistant. |
-            | Web login | `admin` / `admin`, public. It cannot be changed without building your own firmware. |
+            | Web login | `admin` / `admin`, public until you set a password. |
             | Setup network | `OpenHydronic-AP` / `openhydronic`, public. It runs only while the board has no network. |
-            | OTA password | `my-ota-password`, public. |
+            | OTA password | `my-ota-password`, public until you set that same password. |
 
-            Before a board controls a real installation, build your own with your passwords in
+            **Set a password before the board controls a real installation**: Settings, Security
+            on the board's page, or the repair Home Assistant raises. One password then protects
+            the page and the firmware updates. To control every credential, build your own with
             `secrets.yaml` and flash it over USB: see the README. To update this build, upload the
             `-ota.bin` in the board's Settings.
 
+            The password does not cover everything. The page is plain HTTP, so anyone who can read
+            your local traffic can read it. Whoever holds the board's Home Assistant key, which is
+            anyone who can call services in your Home Assistant, admin or not, can set a new one
+            without the old. Nothing locks out repeated wrong guesses.
+
             If a key is ever lost, the board's Settings has a **Factory Reset**. It forgets the
             Wi-Fi saved there, the Home Assistant key and every setting, the boiler switch
-            (*Master Local Mode*) included, which goes back to off.
+            (*Master Local Mode*) included, which goes back to off. The password goes back to the
+            public `admin` / `admin`.
 
             Coming from a 1.1.x release? The Wi-Fi saved through its setup page is forgotten
             once, the web login becomes `admin` / `admin`, and Home Assistant asks for the

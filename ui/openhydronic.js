@@ -71,14 +71,29 @@ const LABELS = {
     restart: "Restart the board",
     restart_confirm: "Restart the board now? Zones close while it reboots.",
     network: "Network",
+    security: "Security",
+    password_hint: "Protects this page and the board's firmware updates. 8 to 64 characters: letters, digits, spaces and the symbols of an English keyboard, no accents. The user name does not change.",
+    password_new: "New password",
+    password_repeat: "Repeat it",
+    password_save: "Save password",
+    password_short: "Use at least 8 characters.",
+    password_long: "Use at most 64 characters.",
+    password_chars: "Use only letters, digits, spaces and the symbols of an English keyboard, no accents.",
+    password_mismatch: "The two passwords differ.",
+    password_saving: "Saving…",
+    password_saved: "Saved. Your browser will ask you to log in again, with the same user name and the new password. So will any other page left open.",
+    password_failed: "The board did not take it. Try again.",
+    default_password_banner: "This board still uses the public password admin / admin: anyone on your network can open its valves. Tap here to set your own.",
     maintenance: "Maintenance",
     factory_reset: "Factory reset",
-    factory_reset_hint: "Forget the Wi-Fi saved here, the Home Assistant key and every setting",
+    factory_reset_hint: "Forget the Wi-Fi saved here, the Home Assistant key and every setting, and go back to the password built into the firmware",
     factory_reset_confirm:
       "Erase what this board saved? It forgets the Wi-Fi set from this page, the key Home " +
       "Assistant gave it, its timers and Master Local Mode (the boiler switch goes back to off), " +
-      "and comes back as OpenHydronic-AP. Zones close meanwhile. A Wi-Fi or key built into the " +
-      "firmware stays. Continue?",
+      "and the board password goes back to the one built into the firmware (admin / admin on " +
+      "the published build). It comes back as OpenHydronic-AP. Zones close meanwhile. A Wi-Fi " +
+      "or key built into the firmware stays. " +
+      "Continue?",
     wifi_change: "Move to another network",
     wifi_change_hint: "The board restarts as its own access point so you can pick a new one",
     wifi_change_confirm:
@@ -160,14 +175,28 @@ const LABELS = {
     restart: "Reiniciar a placa",
     restart_confirm: "Reiniciar a placa agora? As zonas fecham durante o arranque.",
     network: "Rede",
+    security: "Segurança",
+    password_hint: "Protege esta página e as atualizações de firmware da placa. De 8 a 64 caracteres: letras, algarismos, espaços e os símbolos de um teclado inglês, sem acentos. O nome de utilizador não muda.",
+    password_new: "Nova palavra-passe",
+    password_repeat: "Repete-a",
+    password_save: "Gravar palavra-passe",
+    password_short: "Usa pelo menos 8 caracteres.",
+    password_long: "Usa no máximo 64 caracteres.",
+    password_chars: "Usa só letras, algarismos, espaços e os símbolos de um teclado inglês, sem acentos.",
+    password_mismatch: "As duas palavras-passe são diferentes.",
+    password_saving: "A gravar…",
+    password_saved: "Gravada. O navegador vai pedir o login outra vez, com o mesmo nome de utilizador e a nova palavra-passe. Qualquer outra página aberta também vai pedir.",
+    password_failed: "A placa não a aceitou. Tenta de novo.",
+    default_password_banner: "Esta placa ainda usa a palavra-passe pública admin / admin: qualquer pessoa na tua rede pode abrir-lhe as válvulas. Toca aqui para definires a tua.",
     maintenance: "Manutenção",
     factory_reset: "Repor de fábrica",
-    factory_reset_hint: "Esquece o Wi-Fi gravado aqui, a chave do Home Assistant e todas as definições",
+    factory_reset_hint: "Esquece o Wi-Fi gravado aqui, a chave do Home Assistant e todas as definições, e volta à palavra-passe compilada no firmware",
     factory_reset_confirm:
       "Apagar o que esta placa guardou? Esquece o Wi-Fi definido nesta página, a chave que o " +
       "Home Assistant lhe deu, os temporizadores e o Master Local Mode (o interruptor da " +
-      "caldeira volta a desligado), e volta como OpenHydronic-AP. As zonas fecham entretanto. " +
-      "Um Wi-Fi ou chave compilados no firmware ficam. Continuar?",
+      "caldeira volta a desligado), e a palavra-passe da placa volta à compilada no firmware " +
+      "(admin / admin na versão publicada). Volta como OpenHydronic-AP. As zonas fecham " +
+      "entretanto. Um Wi-Fi ou chave compilados no firmware ficam. Continuar?",
     wifi_change: "Mudar de rede",
     wifi_change_hint: "A placa reinicia como ponto de acesso para escolheres outra rede",
     wifi_change_confirm:
@@ -259,7 +288,20 @@ function connect() {
 
   source.addEventListener("error", () => {
     document.body.classList.add("disconnected");
-    if (source.readyState === EventSource.CLOSED) setTimeout(connect, 3000);
+    if (source.readyState !== EventSource.CLOSED) return;
+    // A closed stream may mean the login changed: probe once and reload, not retry.
+    setTimeout(async () => {
+      try {
+        const probe = await fetch("/0.css", { cache: "no-store" });
+        if (probe.status === 401) {
+          location.reload();
+          return;
+        }
+      } catch (_) {
+        /* unreachable: just retry */
+      }
+      connect();
+    }, 3000);
   });
 }
 
@@ -389,7 +431,27 @@ function shell() {
         <button data-tab="logs">${L.tab_logs}</button>
       </nav>
     </header>
+    <div class="warning" id="warning" role="button" tabindex="0" hidden></div>
     <main id="view"><div class="placeholder">${L.loading}</div></main>`;
+
+  // Scroll to the form, without wiping it if it is already on screen.
+  const openSecurity = () => {
+    if (!document.getElementById("password-form"))
+      document.querySelector('#tabs button[data-tab="settings"]').click();
+    const input = document.querySelector('#password-form input[name="first"]');
+    if (input) {
+      input.scrollIntoView?.({ block: "center" });
+      input.focus();
+    }
+  };
+  const warning = document.getElementById("warning");
+  warning.addEventListener("click", openSecurity);
+  warning.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openSecurity();
+    }
+  });
 
   document.getElementById("tabs").addEventListener("click", (event) => {
     const button = event.target.closest("button[data-tab]");
@@ -405,6 +467,12 @@ function shell() {
 function render() {
   const view = document.getElementById("view");
   if (!view) return;
+
+  // The warning does not depend on the view, so it never waits for it.
+  const warning = document.getElementById("warning");
+  const exposed = isOn(byName("binary_sensor", "Default Password")?.entity);
+  warning.hidden = !exposed;
+  if (exposed) warning.textContent = L.default_password_banner;
 
   // Sensors publish every few seconds; repainting then would wipe a field the
   // user is still typing into, so wait until it loses focus.
@@ -424,7 +492,7 @@ function render() {
     disabled: L.master_disabled,
   }[master];
 
-  view.innerHTML =
+  const html =
     tab === "zones"
       ? zonesView()
       : tab === "system"
@@ -432,6 +500,14 @@ function render() {
         : tab === "logs"
           ? logsView()
           : settingsView();
+
+  // Keep the password form across repaints so typing and Save survive.
+  const keep = view.querySelector("#password-form");
+  const page = document.createElement("template");
+  page.innerHTML = html;
+  const fresh = page.content.querySelector("#password-form");
+  if (keep && fresh) fresh.replaceWith(keep);
+  view.replaceChildren(page.content);
   wire(view);
 
   const box = document.getElementById("console");
@@ -570,6 +646,7 @@ function settingsView() {
   const restart = byName("button", "Restart");
   const wifi = byName("button", "Wi-Fi Setup");
   const reset = byName("button", "Factory Reset");
+  const password = byName("text", "Board Password");
   if (!timers && !protections) return `<div class="placeholder">${L.loading}</div>`;
 
   const network = wifi
@@ -582,6 +659,23 @@ function settingsView() {
          <button class="run" data-press="${escapeHtml(wifi.rawId)}"
                  data-confirm="${escapeHtml(L.wifi_change_confirm)}">▶</button>
        </div>`
+    : "";
+
+  const security = password
+    ? `<div class="section"><h2>${L.security}</h2></div>
+       <form class="card" id="password-form" autocomplete="off">
+         <p class="note">${L.password_hint}</p>
+         <label class="field">
+           <input name="first" type="password" autocomplete="new-password"
+                  placeholder="${L.password_new}">
+         </label>
+         <label class="field">
+           <input name="again" type="password" autocomplete="new-password"
+                  placeholder="${L.password_repeat}">
+         </label>
+         <button class="primary" type="submit">${L.password_save}</button>
+         <p class="note" id="password-status"></p>
+       </form>`
     : "";
 
   const maintenance = reset
@@ -599,6 +693,7 @@ function settingsView() {
   return `
     <div class="section"><h2>${L.timers}</h2></div>${timers}
     <div class="section"><h2>${L.protections}</h2></div>${protections}
+    ${security}
     ${network}
     ${maintenance}
     <div class="section"><h2>${L.diagnostics}</h2></div>
@@ -689,12 +784,65 @@ function wire(root) {
   const firmware = root.querySelector("#firmware");
   if (firmware) firmware.addEventListener("change", () => upload(firmware));
 
+  const passwordForm = root.querySelector("#password-form");
+  if (passwordForm && !passwordForm.dataset.wired) {
+    passwordForm.dataset.wired = "1"; // the form survives repaints, so listen once
+    passwordForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      setPassword(passwordForm);
+    });
+  }
+
   const clear = root.querySelector("#clear-logs");
   if (clear)
     clear.addEventListener("click", () => {
       logs.length = 0;
       render();
     });
+}
+
+/** The board answers 200 and drops anything but 8 to 64 printable ASCII bytes. */
+function passwordProblem(value) {
+  if (value.length < 8) return L.password_short;
+  if (value.length > 64) return L.password_long;
+  if (!/^[\x20-\x7e]+$/.test(value)) return L.password_chars;
+  return "";
+}
+
+/** The old login stops working once it is saved, so reload to get the new one. */
+async function setPassword(form) {
+  const status = form.querySelector("#password-status");
+  const first = form.elements.first.value;
+  const problem = passwordProblem(first);
+  if (problem) {
+    status.textContent = problem;
+    return;
+  }
+  if (first !== form.elements.again.value) {
+    status.textContent = L.password_mismatch;
+    return;
+  }
+
+  const button = form.querySelector("button");
+  button.disabled = true;
+  status.textContent = L.password_saving;
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), 10000);
+  try {
+    const { domain, key } = parseId(byName("text", "Board Password").rawId);
+    const response = await fetch(
+      `/${domain}/${encodeURIComponent(key)}/set?value=${encodeURIComponent(first)}`,
+      { method: "POST", body: "", signal: abort.signal }
+    );
+    if (!response.ok) throw new Error(String(response.status));
+    status.textContent = L.password_saved;
+    setTimeout(() => location.reload(), 2500);
+  } catch (_) {
+    status.textContent = L.password_failed;
+    button.disabled = false;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Firmware upload, the cable-free way to update a board without a server. */

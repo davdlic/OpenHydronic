@@ -68,6 +68,10 @@ substitutions:
   antiseize_days: "SUN"
   antiseize_minutes: "5"
 
+  # ---- Board password ------------------------------------------------------
+  # "true" only in the published build, which starts with a public login.
+  password_is_public: "false"
+
 # =============================================================================
 #  CORE
 # =============================================================================
@@ -79,7 +83,7 @@ esphome:
   name_add_mac_suffix: true
   project:
     name: "OpenHydronic.Firmware"
-    version: "1.2.0"
+    version: "1.3.0"
   on_boot:
     # Priority 600: safe state before any hardware comes up.
     - priority: 600
@@ -97,6 +101,11 @@ esphome:
             id(demand_since)    = 0;
             id(purge_since)     = 0;
             id(override_mode)   = 0;
+
+    # Runs once the saved password is restored. Safe mode skips it.
+    - priority: 300
+      then:
+        - script.execute: apply_board_password
 
 esp32:
   board: esp32dev
@@ -152,6 +161,7 @@ api:
 
 ota:
   - platform: esphome
+    id: ota_native
     password: !secret ota_password
   # Firmware upload from the board's own page, for installs without a server.
   - platform: web_server
@@ -227,6 +237,12 @@ globals:
   - id: override_mode
     type: uint8_t
     initial_value: '0'
+
+  # Saved board password; empty means the compiled one applies.
+  # The web server holds a pointer to this buffer.
+  - id: board_pass
+    type: char[65]
+    restore_value: true
 
 # =============================================================================
 #  RUNTIME TIMERS
@@ -663,6 +679,14 @@ interval:
 #  SCRIPTS
 # =============================================================================
 script:
+  # Applies the saved password to the web login and to OTA, when set and on boot.
+  - id: apply_board_password
+    then:
+      - lambda: |-
+          if (id(board_pass)[0] == 0) return;
+          web_server_base::global_web_server_base->set_auth_password(id(board_pass));
+          id(ota_native)->set_auth_password(std::string(id(board_pass)));
+
   # Manual air purge: every valve open plus the pump, for N minutes.
   # The pump still honours the Master Start Delay, so the heads are open
   # before there is any flow.
@@ -775,11 +799,50 @@ button:
     disabled_by_default: true
 
 # =============================================================================
+#  BOARD PASSWORD
+#  Set from the board's page or from Home Assistant. Never published.
+# =============================================================================
+text:
+  - platform: template
+    name: "Board Password"
+    id: board_password
+    icon: mdi:key-variant
+    entity_category: config
+    mode: password
+    min_length: 8
+    max_length: 64
+    optimistic: false
+    set_action:
+      # Web and API answer first, so check here: 8 to 64 printable ASCII bytes, else ignore.
+      - if:
+          condition:
+            lambda: |-
+              if (x.size() < 8 || x.size() > 64) return false;
+              for (char c : x) if (c < 0x20 || c > 0x7e) return false;
+              return true;
+          then:
+            - lambda: |-
+                memcpy(id(board_pass), x.c_str(), x.size());
+                id(board_pass)[x.size()] = 0;
+            - script.execute: apply_board_password
+            # Both the global and the flash write are delayed: save now.
+            - lambda: |-
+                board_pass->update();
+                global_preferences->sync();
+
+# =============================================================================
 #  STATE TELEMETRY
 #  "Master Demand" reports whether the board is calling for heat. The Home
 #  Assistant integration runs its own master state machine on top of it.
 # =============================================================================
 binary_sensor:
+  # On while the published build still answers to the public admin / admin.
+  - platform: template
+    name: "Default Password"
+    device_class: problem
+    entity_category: diagnostic
+    lambda: return ${password_is_public} && id(board_pass)[0] == 0;
+
   - platform: template
     name: "Master Demand"
     id: master_demand

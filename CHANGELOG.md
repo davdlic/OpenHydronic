@@ -4,6 +4,36 @@ All notable changes to this firmware are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/).
 
+## [1.3.0] - 2026-10-19
+
+### Added
+
+- A board password you set yourself, without rebuilding. *Settings → Security*
+  on the board's page, or the `Board Password` entity in Home Assistant, sets one
+  password for the web login and for the firmware updates. It is kept across
+  reboots and the user name does not change. The state is never published, ESPHome
+  shows a mask in its own page, and it logs the value only at verbose level,
+  which this firmware does not enable.
+- `Default Password`, a sensor that is on while the published build still
+  answers to the public `admin` / `admin`, and a banner on every page of the
+  board's interface until that changes.
+
+### Changed
+
+- The release notes and the README no longer say the login cannot be changed
+  without building your own firmware.
+- `Factory Reset` also returns the password to the one compiled in, which is
+  the public `admin` / `admin` on the published build.
+- The README and the release notes list what a password does not cover: plain
+  HTTP, anyone who can call services in the Home Assistant that holds the
+  board's key, and no lockout after wrong guesses.
+
+### Known limit
+
+- In safe mode, which starts only after repeated failed boots, the OTA password
+  is the one compiled in, because the saved one is applied by a boot step that
+  safe mode skips. The web server is not running there.
+
 ## [1.2.0] - 2026-10-17
 
 ### Added
@@ -159,6 +189,7 @@ First public release.
 - Standalone web server on port 80, recovery access point, OTA updates.
 - Runtime timers exposed as number entities, no reflash needed.
 
+[1.3.0]: https://github.com/davdlic/OpenHydronic/releases/tag/v1.3.0
 [1.2.0]: https://github.com/davdlic/OpenHydronic/releases/tag/v1.2.0
 [1.1.2]: https://github.com/davdlic/OpenHydronic/releases/tag/v1.1.2
 [1.1.1]: https://github.com/davdlic/OpenHydronic/releases/tag/v1.1.1
